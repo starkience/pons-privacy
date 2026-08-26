@@ -1,0 +1,10 @@
+{
+  "network": "robinhood-mainnet",
+  "chainId": 4663,
+  "status": "not-deployed",
+  "factory": null,
+  "ponsV2Factory": "0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e",
+  "usdg": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+  "ponsSourceCommit": "b59402035f98a912042734142ea885595f0b4e95",
+  "researchedAt": "2026-08-26"
+}

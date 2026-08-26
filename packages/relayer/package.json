@@ -1,0 +1,25 @@
+{
+  "name": "@pons-privacy/relayer",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "pnpm clean && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "pnpm --filter @pons-privacy/sdk build",
+    "test": "vitest run",
+    "start": "node dist/main.js",
+    "format:check": "prettier --check 'src/**/*.{ts,md}' README.md"
+  },
+  "dependencies": {
+    "@pons-privacy/sdk": "workspace:*",
+    "viem": "^2.38.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

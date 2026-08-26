@@ -1,0 +1,7 @@
+Pons Privacy
+
+Portions of the deterministic execution account, Pons adapter, relayer policy, tests, and technical
+assessment were extracted and adapted from starkience/crosschain-privatepump under Apache-2.0.
+
+Pons, STRK20, Starknet, Robinhood, Layerswap, and Rhino.fi are third-party projects and trademarks.
+This repository does not include or fork their protocol contracts or privacy cryptography.

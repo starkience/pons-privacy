@@ -1,0 +1,25 @@
+{
+  "name": "pons-privacy",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "pnpm --filter @pons-privacy/sdk build && pnpm --filter @pons-privacy/relayer build && pnpm build:evm",
+    "build:evm": "pnpm setup:evm && forge build --root evm",
+    "format": "prettier --write '**/*.{ts,json,md,yml}' && forge fmt --root evm",
+    "format:check": "prettier --check '**/*.{ts,json,md,yml}' && forge fmt --root evm --check",
+    "setup:evm": "cd evm && forge soldeer install --config-location foundry",
+    "test": "pnpm --filter @pons-privacy/sdk test && pnpm --filter @pons-privacy/relayer test && pnpm test:evm",
+    "test:evm": "pnpm setup:evm && forge test --root evm",
+    "test:fork": "forge test --root evm --fork-url https://rpc.mainnet.chain.robinhood.com --match-contract PonsV2ForkTest -vv",
+    "typecheck": "pnpm --filter @pons-privacy/sdk build && pnpm --filter @pons-privacy/relayer typecheck"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2"
+  }
+}

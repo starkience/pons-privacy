@@ -1,0 +1,78 @@
+# Pons Privacy
+
+An STRK20 sanitization layer for Pons on Robinhood Chain. Users withdraw USDC from a private
+STRK20 balance, route it into USDG at a fresh counterfactual Robinhood account, and launch or trade
+through the existing Pons contracts. Pons remains unchanged and sees the derived execution account
+as creator and trader rather than the user's connected/root wallet.
+
+```text
+STRK20 private USDC
+  → validated USDC/USDG transport
+  → fresh PonsPrivacyAccount on Robinhood
+  → Pons launch / buy / sell
+  → validated USDG/USDC return
+  → fresh Starknet recovery account
+  → new STRK20 note
+```
+
+## Privacy boundary
+
+This design provides root-wallet unlinkability, not confidential Robinhood execution.
+
+- Hidden inside STRK20: note ownership, internal sender/receiver, balances, and note-to-note
+  transfers.
+- Public on Robinhood: the execution account, Pons token/curve, calldata, amounts, prices, balances,
+  approvals, metadata, and timing.
+- Visible to the routing provider: source and destination networks, assets, addresses, amounts,
+  transactions, order ID, and timing.
+
+Fresh accounts and amount/timing discipline reduce public correlation. They do not prevent the
+transport operator from linking an order's two edges.
+
+## Status
+
+Phase 1 is implemented:
+
+- Robinhood/Pons deployment manifest;
+- deterministic non-upgradeable execution account and factory;
+- exact Pons launch, pre-graduation buy, and sell adapter;
+- live-state economics, phase, pair, curve, recipient, approval, and slippage validation;
+- Pons-only relayer policy; and
+- Robinhood-mainnet fork proof: counterfactual deploy → Pons USDG launch → buy → sell.
+
+Transport is deliberately an interface only. Layerswap is the leading MVP candidate and Rhino.fi
+the fallback, but neither is production-ready until bidirectional small-value tests prove contract
+senders, arbitrary recipients, fees, expiry, refunds, interruption recovery, and exact delivery.
+
+## Repository
+
+```text
+evm/                 PonsPrivacyAccount, factory, deployment script, Foundry tests
+packages/sdk/        Robinhood config, Pons adapter, execution signing, transport types
+packages/relayer/    strict Pons semantic relayer and HTTP service
+docs/                architecture, privacy, transport, deployment, phased plan
+```
+
+## Develop
+
+Requirements: Node 24+, pnpm 10+, Foundry.
+
+```sh
+pnpm install
+pnpm test
+pnpm typecheck
+pnpm build
+pnpm test:fork
+```
+
+The ordinary Foundry suite is offline. `pnpm test:fork` reads live Pons state through a local
+Robinhood mainnet fork; its state changes are ephemeral and do not submit mainnet transactions.
+
+## Deployments
+
+Pons V2 and USDG already exist on Robinhood mainnet. This project only deploys its execution-account
+factory and runs a policy relayer. No project factory deployment is recorded yet. See
+[deployment](docs/deployment.md).
+
+Prototype, unaudited. Do not deploy with real value before independent review of the account,
+relayer, client key handling, and any future STRK20 transport helper.
