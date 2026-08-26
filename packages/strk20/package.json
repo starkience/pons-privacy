@@ -1,0 +1,36 @@
+{
+  "name": "@pons-privacy/strk20",
+  "version": "0.1.0",
+  "description": "Project-held STRK20 mainnet custody and withdrawal service for Pons Privacy.",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "pnpm clean && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "prepreflight": "pnpm build",
+    "preflight": "node dist/preflight-cli.js",
+    "format:check": "prettier --check 'src/**/*.{ts,md}' README.md"
+  },
+  "dependencies": {
+    "@starkware-libs/starknet-privacy-sdk": "0.14.3-rc.4",
+    "starknet": "10.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

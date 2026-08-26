@@ -1,0 +1,20 @@
+{
+  "network": "starknet-mainnet",
+  "chainId": "SN_MAIN",
+  "networkId": "mainnet",
+  "status": "rpc-preflight-pending",
+  "protocolRelease": "PRIVACY-0.14.3-RC.4",
+  "sdkVersion": "0.14.3-rc.4",
+  "poolAddress": "0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a",
+  "poolClassHash": "0x030b8c540cf04d8ef0f4db2a9098d9cc0e35e83af1cb3325f5a4f40144b4b30b",
+  "governanceAdmin": "0x3103066e6c7037ba947ea9a7b5b8d110ae7f3dA631fa5849435d0dc1fc5ef785",
+  "compliancePublicKey": "0x01eed60b8d483b3bede62d1cc0f32874aea30747e6943437c858359b41801bf7",
+  "feeTokenAddress": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+  "proofValidityBlocks": 450,
+  "provingServiceUrl": "https://transaction-prover.alpha-mainnet.sw-dev.io/",
+  "discoveryServiceUrl": "https://discovery-service.alpha-mainnet.sw-dev.io/",
+  "ohttpPublicKeyConfigBase64": "ACkAACBBhSMg/zZ0lfpSLJTLg685Hk6JAYOSclu/IJjdkxvEJAAEAAEAAQ==",
+  "ohttpPublicKeyConfigSha256": "96986179ea23a05f65916ca667ef3c4875a6d49c80c062c505698412e4743379",
+  "subAccountAnonymizerAddress": null,
+  "researchedAt": "2026-08-26"
+}

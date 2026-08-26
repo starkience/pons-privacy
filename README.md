@@ -40,6 +40,12 @@ Phase 1 is implemented:
 - Pons-only relayer policy; and
 - Robinhood-mainnet fork proof: counterfactual deploy → Pons USDG launch → buy → sell.
 
+The project-held STRK20 mainnet client is also implemented against Privacy SDK
+`0.14.3-rc.4`. The backend holds the Starknet signer and viewing key, discovers mature USDC notes,
+requests proofs from the pinned hosted prover, and submits withdrawals. End users therefore do not
+need a Starknet wallet or Starknet confirmation prompts. This is custodial: the project can inspect
+and spend those notes.
+
 Transport is deliberately an interface only. Layerswap is the leading MVP candidate and Rhino.fi
 the fallback, but neither is production-ready until bidirectional small-value tests prove contract
 senders, arbitrary recipients, fees, expiry, refunds, interruption recovery, and exact delivery.
@@ -50,12 +56,16 @@ senders, arbitrary recipients, fees, expiry, refunds, interruption recovery, and
 evm/                 PonsPrivacyAccount, factory, deployment script, Foundry tests
 packages/sdk/        Robinhood config, Pons adapter, execution signing, transport types
 packages/relayer/    strict Pons semantic relayer and HTTP service
+packages/strk20/     project-held STRK20 discovery, proving, withdrawal, and preflight
 docs/                architecture, privacy, transport, deployment, phased plan
 ```
 
 ## Develop
 
 Requirements: Node 24+, pnpm 10+, Foundry.
+
+The RC.4 Privacy SDK is published through GitHub Packages. Configure a trusted npm credential with
+`read:packages`; never commit it to this repository.
 
 ```sh
 pnpm install
@@ -75,4 +85,4 @@ factory and runs a policy relayer. No project factory deployment is recorded yet
 [deployment](docs/deployment.md).
 
 Prototype, unaudited. Do not deploy with real value before independent review of the account,
-relayer, client key handling, and any future STRK20 transport helper.
+relayer, custodial key handling, STRK20 integration, and transport adapter.

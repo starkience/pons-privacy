@@ -16,11 +16,15 @@ available. Prove recipients, contract sources, transformations, expiry, retries,
 
 Exit gate: choose the provider from executed evidence and freeze validated deposit-action schemas.
 
+The project-held RC.4 SDK client and mainnet preflight are implemented, but they do not satisfy this
+gate: no provider route has yet been funded and reconciled.
+
 ## Phase 3 — private funding MVP
 
-Connect an official STRK20 withdrawal to the validated transport action, deliver USDG to a fresh
-counterfactual account, and enable private launch/buy. Persist every state transition and separate
-provider delivery from Pons execution.
+Connect the project-held STRK20 withdrawal to the validated transport action, add authenticated
+per-user custodial accounting, deliver USDG to a fresh counterfactual account, and enable private
+launch/buy. Persist every state transition and separate proof construction, Starknet submission,
+provider delivery, and Pons execution.
 
 ## Phase 4 — sell and return
 

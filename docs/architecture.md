@@ -7,23 +7,32 @@ It does not deploy a launchpad, bonding curve, AMM, privacy pool, or replacement
 
 ## Components and ownership
 
-| Component                   | Responsibility                                                 | Must not do                                                |
-| --------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------- |
-| STRK20                      | private USDC notes, proofs, screening, selective disclosure    | encode Pons semantics                                      |
-| Official STRK20 integration | key derivation, note discovery, proof construction             | expose viewing keys to the dapp or persist derived secrets |
-| Stable transport            | swap/route USDC ↔ USDG and expose durable order state          | claim to be the privacy layer                              |
-| `PonsPrivacyAccountFactory` | predict and counterfactually deploy execution accounts         | allow provider-controlled ownership                        |
-| `PonsPrivacyAccount`        | execute owner-signed, relayed call batches                     | decide which Pons calls are safe                           |
-| Pons adapter                | construct exact launch/curve calls from live state             | contain bridge-provider details                            |
-| Pons relayer                | decode and semantically constrain every call before simulation | provide an unrestricted target mode                        |
-| Pons                        | create tokens, run curve markets, graduate liquidity           | learn the connected/root wallet                            |
+| Component                      | Responsibility                                                 | Must not do                            |
+| ------------------------------ | -------------------------------------------------------------- | -------------------------------------- |
+| STRK20                         | private USDC notes, proofs, screening, selective disclosure    | encode Pons semantics                  |
+| Project-held STRK20 service    | custody signer/viewing keys, discover notes, request proofs    | expose keys or generic spend endpoints |
+| Hosted STRK20 prover/discovery | generate proofs and return encrypted discovery results         | authorize a user withdrawal            |
+| Stable transport               | swap/route USDC ↔ USDG and expose durable order state          | claim to be the privacy layer          |
+| `PonsPrivacyAccountFactory`    | predict and counterfactually deploy execution accounts         | allow provider-controlled ownership    |
+| `PonsPrivacyAccount`           | execute owner-signed, relayed call batches                     | decide which Pons calls are safe       |
+| Pons adapter                   | construct exact launch/curve calls from live state             | contain bridge-provider details        |
+| Pons relayer                   | decode and semantically constrain every call before simulation | provide an unrestricted target mode    |
+| Pons                           | create tokens, run curve markets, graduate liquidity           | learn the connected/root wallet        |
 
 ## Key and observer boundary
 
-The official STRK20 route owns note discovery, viewing-key handling, action construction, and proof
-generation. The dapp supplies intent and receives narrowly scoped results. Derived EVM owner keys
-and raw identity signatures are memory-only and never enter logs, analytics, provider metadata, or
-durable order records.
+The backend owns the Starknet account signer and viewing key, constructs actions, discovers notes,
+requests a proof from the pinned hosted prover, and submits the Starknet transaction. The user does
+not need Ready, Xverse, or any other Starknet wallet and does not confirm Starknet transactions.
+The hosted service performs the cryptographic proof computation; “project-held” means the project
+orchestrates it and controls the account. Running proof computation itself would require a
+self-hosted proving service.
+
+This route is custodial. The project can inspect and spend the account's private notes and must
+maintain authenticated per-user accounting if one account serves multiple users. Signer and viewing
+keys are persistent only in a production secret manager and are never placed in browser bundles,
+logs, analytics, provider metadata, or order records. Derived EVM owner keys and raw identity
+signatures remain memory-only.
 
 Observers include the STRK20 prover/screening infrastructure, Starknet and Robinhood RPC operators,
 the transport operator/solver, the Pons relayer, sequencers, and public chain observers. Each sees
@@ -32,7 +41,8 @@ network metadata.
 
 ## Execution-account lifecycle
 
-1. Derive a domain-separated EVM owner through the official STRK20/privacy route.
+1. Derive a domain-separated EVM owner from the authenticated Pons session; this does not require a
+   Starknet interaction.
 2. Ask the factory for the CREATE2 account at `(owner, accountIndex)`.
 3. Create and persist the transport order before moving funds.
 4. Deliver USDG to the predicted address before it has code.

@@ -6,10 +6,13 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -17,6 +20,8 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: "@starkware-libs"
       - uses: foundry-rs/foundry-toolchain@v1
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
