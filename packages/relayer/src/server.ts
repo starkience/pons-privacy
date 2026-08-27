@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import {
   createServer,
   type IncomingMessage,
@@ -9,7 +9,20 @@ import { parseRelayRequest } from "./schema.js";
 
 const MAX_BODY_BYTES = 128 * 1024;
 
-export function startRelayerServer(relayer: PonsPrivacyRelayer, port: number) {
+export interface RelayerServerOptions {
+  readonly apiKey: string;
+  readonly host?: string;
+}
+
+export function startRelayerServer(
+  relayer: PonsPrivacyRelayer,
+  port: number,
+  options: RelayerServerOptions,
+) {
+  if (Buffer.byteLength(options.apiKey) < 32) {
+    throw new Error("RELAYER_API_KEY must contain at least 32 bytes");
+  }
+  const host = options.host ?? "127.0.0.1";
   return createServer(async (request, response) => {
     try {
       if (request.method === "GET" && request.url === "/healthz") {
@@ -21,6 +34,9 @@ export function startRelayerServer(relayer: PonsPrivacyRelayer, port: number) {
       }
       if (request.method !== "POST" || request.url !== "/v1/relay") {
         return json(response, 404, { error: "not found" });
+      }
+      if (!authorized(request, options.apiKey)) {
+        return json(response, 401, { error: "unauthorized" });
       }
       const requestId = randomUUID();
       try {
@@ -55,7 +71,19 @@ export function startRelayerServer(relayer: PonsPrivacyRelayer, port: number) {
       const message = error instanceof Error ? error.message : "unknown error";
       return json(response, 400, { error: message });
     }
-  }).listen(port);
+  }).listen(port, host);
+}
+
+function authorized(request: IncomingMessage, expectedApiKey: string): boolean {
+  const header = request.headers.authorization;
+  if (typeof header !== "string" || !header.startsWith("Bearer ")) {
+    return false;
+  }
+  const supplied = Buffer.from(header.slice("Bearer ".length));
+  const expected = Buffer.from(expectedApiKey);
+  return (
+    supplied.length === expected.length && timingSafeEqual(supplied, expected)
+  );
 }
 
 async function readJson(request: IncomingMessage): Promise<unknown> {

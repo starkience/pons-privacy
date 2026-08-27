@@ -56,7 +56,9 @@ Before any future broadcast, repeat `pnpm test:fork` and obtain independent acco
 ## Run the relayer
 
 Copy `.env.example` to an ignored `.env.local` and configure the deployed factory plus a dedicated
-funded relayer key. The service exposes `GET /healthz` and `POST /v1/relay`.
+funded relayer key and a random `RELAYER_API_KEY` of at least 32 bytes. The service exposes
+`GET /healthz` and authenticated `POST /v1/relay`. It binds to loopback by default; production
+hosting must place it behind the authenticated application backend or a TLS reverse proxy.
 
 ```sh
 pnpm build
@@ -67,6 +69,21 @@ pnpm --filter @pons-privacy/relayer start
 ```
 
 The relayer is deliberately Pons-only. It has no environment switch for unrestricted targets.
+
+## Controlled mainnet launch
+
+The backend launch client reads live Pons eligibility, fee, config, USDG approval, and economics;
+derives the counterfactual privacy account; prepares the owner-signed request; and defaults to a
+non-broadcasting dry run. Keep `LAUNCH_OWNER_PRIVATE_KEY` and `RELAYER_API_KEY` in the server secret
+store. Set the token metadata and a reusable random `TOKEN_SALT`, then inspect the dry-run output:
+
+```sh
+pnpm --filter @pons-privacy/relayer build
+pnpm --filter @pons-privacy/relayer launch:mainnet
+```
+
+Only set `BROADCAST=true` for the reviewed, final metadata. The client waits for the receipt and
+decodes Pons's `TokenLaunched` event to report the token, curve, deployer, and config.
 
 ## End-to-end release gate
 

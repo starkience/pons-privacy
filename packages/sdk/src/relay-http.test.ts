@@ -39,6 +39,28 @@ describe("HTTP relay", () => {
     ).resolves.toBe(transactionHash);
   });
 
+  it("attaches a server-side relayer credential", async () => {
+    const transactionHash = `0x${"bb".repeat(32)}`;
+    const apiKey = "test-relayer-api-key-with-at-least-32-bytes";
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      expect(new Headers(init?.headers).get("authorization")).toBe(
+        `Bearer ${apiKey}`,
+      );
+      return new Response(JSON.stringify({ transactionHash }), { status: 202 });
+    });
+    await expect(
+      createHttpRelay({ endpoint: "/v1/relay", apiKey, fetch: fetchMock })(
+        request,
+      ),
+    ).resolves.toBe(transactionHash);
+  });
+
+  it("rejects weak relayer credentials", () => {
+    expect(() =>
+      createHttpRelay({ endpoint: "/v1/relay", apiKey: "too-short" }),
+    ).toThrow(/at least 32 bytes/);
+  });
+
   it("rejects insecure remote endpoints", () => {
     expect(() =>
       createHttpRelay({ endpoint: "http://example.com/v1/relay" }),

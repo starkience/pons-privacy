@@ -11,6 +11,7 @@
     "pretest": "pnpm --filter @pons-privacy/sdk build",
     "test": "vitest run",
     "start": "node dist/main.js",
+    "launch:mainnet": "node dist/launch-mainnet.js",
     "format:check": "prettier --check 'src/**/*.{ts,md}' README.md"
   },
   "dependencies": {

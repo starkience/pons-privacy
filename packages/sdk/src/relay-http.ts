@@ -5,6 +5,8 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 
 export interface HttpRelayOptions {
   endpoint: string;
+  /** Server-side credential. Never expose this value in browser bundles. */
+  apiKey?: string;
   fetch?: typeof fetch;
   timeoutMs?: number;
 }
@@ -28,6 +30,12 @@ export function createHttpRelay(options: HttpRelayOptions): RelayExecution {
   const endpoint = validateRelayEndpoint(options.endpoint);
   const fetchImpl = options.fetch ?? fetch;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  if (
+    options.apiKey !== undefined &&
+    new TextEncoder().encode(options.apiKey).byteLength < 32
+  ) {
+    throw new Error("relayer API key must contain at least 32 bytes");
+  }
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
     throw new Error("relayer timeout must be a positive safe integer");
   }
@@ -37,6 +45,9 @@ export function createHttpRelay(options: HttpRelayOptions): RelayExecution {
       method: "POST",
       headers: {
         accept: "application/json",
+        ...(options.apiKey === undefined
+          ? {}
+          : { authorization: `Bearer ${options.apiKey}` }),
         "content-type": "application/json",
       },
       body: JSON.stringify(relayExecutionRequestJson(request)),

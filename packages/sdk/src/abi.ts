@@ -10,6 +10,16 @@ export const ponsPrivacyAccountAbi = [
 
 export const ponsPrivacyAccountFactoryAbi = [
   {
+    type: "event",
+    name: "AccountCreated",
+    anonymous: false,
+    inputs: [
+      { name: "account", type: "address", indexed: true },
+      { name: "owner", type: "address", indexed: true },
+      { name: "index", type: "uint256", indexed: true },
+    ],
+  },
+  {
     type: "function",
     name: "computeAddress",
     stateMutability: "view",

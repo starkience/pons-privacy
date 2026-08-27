@@ -23,6 +23,19 @@ const ZERO_BYTES32 = `0x${"00".repeat(32)}`;
 
 export const ponsV2FactoryAbi = [
   {
+    type: "event",
+    name: "TokenLaunched",
+    anonymous: false,
+    inputs: [
+      { name: "token", type: "address", indexed: true },
+      { name: "curve", type: "address", indexed: true },
+      { name: "deployer", type: "address", indexed: true },
+      { name: "pairToken", type: "address", indexed: false },
+      { name: "launchConfigId", type: "uint256", indexed: false },
+      { name: "graduationThreshold", type: "uint256", indexed: false },
+    ],
+  },
+  {
     type: "function",
     name: "canLaunch",
     stateMutability: "view",
