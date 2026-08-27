@@ -2,6 +2,8 @@ import {
   PONS_PRIVACY_ACCOUNT_FACTORY_ROBINHOOD,
   PONS_V2_ROBINHOOD,
   ROBINHOOD_MAINNET_CHAIN_ID,
+  relayExecutionRequestJson,
+  type RelayExecutionRequest,
 } from "@pons-privacy/sdk";
 
 export interface LaunchSocials {
@@ -37,7 +39,14 @@ export interface LaunchPreview {
   launchFeeEth: string;
   creatorTaxMaximumBps: number;
   economicsPinned: boolean;
+  fundingBalance?: string;
   route: readonly string[];
+}
+
+export interface LaunchAccount {
+  readonly account: string;
+  readonly owner: string;
+  readonly accountIndex: number;
 }
 
 export interface LaunchSubmission {
@@ -48,8 +57,15 @@ export interface LaunchSubmission {
 }
 
 export interface LaunchApi {
-  preview(draft: LaunchDraft): Promise<LaunchPreview>;
-  submit(draft: LaunchDraft, previewId: string): Promise<LaunchSubmission>;
+  preview(
+    draft: LaunchDraft,
+    launchAccount?: LaunchAccount,
+  ): Promise<LaunchPreview>;
+  submit(
+    draft: LaunchDraft,
+    previewId: string,
+    relayRequest: RelayExecutionRequest,
+  ): Promise<LaunchSubmission>;
 }
 
 export function createLaunchApi(
@@ -58,15 +74,17 @@ export function createLaunchApi(
 ): LaunchApi {
   const base = baseUrl.replace(/\/$/, "");
   return {
-    preview: (draft) =>
+    preview: (draft, launchAccount) =>
       request<LaunchPreview>(fetchImpl, `${base}/v1/launches/preview`, {
         draft,
+        launchAccount,
       }),
-    submit: (draft, previewId) =>
+    submit: (draft, previewId, relayRequest) =>
       request<LaunchSubmission>(fetchImpl, `${base}/v1/launches`, {
         draft,
         previewId,
-        idempotencyKey: randomId(),
+        idempotencyKey: previewId,
+        relayRequest: relayExecutionRequestJson(relayRequest),
       }),
   };
 }
@@ -113,7 +131,11 @@ async function request<T>(
 ): Promise<T> {
   const response = await fetchImpl(url, {
     method: "POST",
-    headers: { accept: "application/json", "content-type": "application/json" },
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      "x-pons-request": "1",
+    },
     body: JSON.stringify(body),
     cache: "no-store",
     credentials: "include",

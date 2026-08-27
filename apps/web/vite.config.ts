@@ -10,6 +10,10 @@ export default defineConfig({
         target: "http://127.0.0.1:8788",
         rewrite: (path) => path.replace(/^\/deposit-api/, ""),
       },
+      "/api": {
+        target: "http://127.0.0.1:8789",
+        rewrite: (path) => path.replace(/^\/api/, ""),
+      },
     },
   },
   preview: { port: 4173 },

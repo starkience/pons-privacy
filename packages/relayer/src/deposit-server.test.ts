@@ -125,6 +125,36 @@ async function harness(
         },
       },
     })),
+    recoverReturnSwap: vi.fn(async () => ({
+      quote,
+      swap,
+      depositActions: actions,
+    })),
+    recoverFundingSwap: vi.fn(async () => ({
+      quote: {
+        ...quote,
+        direction: "fund-robinhood" as const,
+        sourceNetwork: "STARKNET_MAINNET" as const,
+        sourceAsset: "USDC" as const,
+        destinationNetwork: "ROBINHOOD_MAINNET" as const,
+        destinationAsset: "USDG" as const,
+      },
+      swap: fundingSwap,
+      depositAction: {
+        type: "transfer" as const,
+        order: 0,
+        network: "STARKNET_MAINNET" as const,
+        token: "USDC" as const,
+        tokenAddress: "0xabc",
+        amount: 10_000_000n,
+        recipient: "0x987",
+        call: {
+          contractAddress: "0xabc",
+          entrypoint: "transfer" as const,
+          calldata: ["0x987", "10000000", "0"] as const,
+        },
+      },
+    })),
     getSwap: vi.fn(async () => swap),
     getFundingSwap: vi.fn(async () => fundingSwap),
     getFundingAction: vi.fn(async () => ({
@@ -229,6 +259,30 @@ describe("LayerSwap deposit API", () => {
         referenceId: SWAP_ID,
       }),
     );
+  });
+
+  it("recovers a previously reserved operation instead of creating a duplicate", async () => {
+    const { gateway, url } = await harness(false, true);
+    const body = JSON.stringify({
+      operationId: SWAP_ID,
+      amount: "10000000",
+      sourceAddress: TRANSPORT,
+      destinationAddress: ROBINHOOD_DESTINATION,
+    });
+    const first = await fetch(`${url}/v1/funding/swaps`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+    });
+    const second = await fetch(`${url}/v1/funding/swaps`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+    });
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(200);
+    expect(gateway.createFundingSwap).toHaveBeenCalledOnce();
+    expect(gateway.recoverFundingSwap).toHaveBeenCalledOnce();
   });
 
   it("does not expose status or actions to a different source address", async () => {

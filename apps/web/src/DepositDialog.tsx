@@ -22,6 +22,7 @@ import {
   parseUsdAmount,
   type DepositQuoteApi,
 } from "./deposit-api.js";
+import type { LaunchAccount } from "./launch-api.js";
 
 type FlowMode = "deposit" | "exit";
 
@@ -65,7 +66,7 @@ export function DepositDialog({
     route: ResolvedPonsPrivacyRoute,
     action: LayerswapFundingAction,
   ): Promise<string>;
-  onReadyForLaunch?(address: string): void;
+  onReadyForLaunch?(account: LaunchAccount): void;
   onClose(): void;
 }) {
   const [mode, setMode] = useState<FlowMode>("deposit");
@@ -422,7 +423,11 @@ export function DepositDialog({
                 : {}),
             },
           );
-          onReadyForLaunch?.(route!.robinhoodExecutionAccount);
+          onReadyForLaunch?.({
+            account: route!.robinhoodExecutionAccount,
+            owner: route!.robinhoodExecution.address,
+            accountIndex: operation.accountIndex,
+          });
         }
       } else if (status.status === "pending_refund") {
         current = await journalRef.current.advance(operation.id, "refunding");

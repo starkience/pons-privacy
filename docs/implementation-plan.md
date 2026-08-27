@@ -10,7 +10,9 @@
 - private-paymaster proof submission with a hard S1 outbound prohibition;
 - S2 atomic deploy-and-transfer through standard SNIP-29;
 - server-only LayerSwap/AVNU credentials and independent mainnet kill switches; and
-- frontend wallet connection plus local privacy-account creation.
+- frontend wallet connection plus local privacy-account creation;
+- encrypted browser recovery journal and durable UUID-keyed LayerSwap creation/reconciliation; and
+- funded-R2 preview plus exact browser-held O2 signing, backend validation, and launch idempotency.
 
 ## Phase 2 — funded transport proof
 
@@ -19,16 +21,18 @@ outbound orders. Record exact calls, source/destination transactions, fees, expi
 under/overpayment, duplicates, arbitrary recipients, and restart recovery. Keep both swap gates
 false until reconciled evidence passes review.
 
-## Phase 3 — resumable private balance
+## Phase 3 — funded private-balance activation
 
-Implement the operation journal that binds quote, S1/S2/R2 indices, proof base, transaction hashes,
-LayerSwap status, independently observed balances, and recovery state. Wire shield, private balance,
-exit, and R2 funding into the frontend without persisting keys.
+The operation journal and frontend wiring for quote, S1/S2/R2 indices, LayerSwap status, recovery,
+withdrawal, and R2 funding are implemented without persisting keys. Complete the minimum funded
+shield/withdraw round trip and independently reconcile balances and transaction hashes before
+enabling it.
 
 ## Phase 4 — launch, trade, sell, return
 
-Enable the user-signed R2 launch path only after the funded privacy route. Add buy/sell and a fresh
-return account, with delivery and re-shielding as separate resumable steps.
+The user-signed R2 launch path is implemented but disabled until the funded privacy route passes.
+Add browser-held buy/sell requests and a fresh return account, with delivery and re-shielding as
+separate resumable steps.
 
 ## Phase 5 — production hardening
 

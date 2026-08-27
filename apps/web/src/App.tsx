@@ -17,13 +17,20 @@ import { XIcon as X } from "@phosphor-icons/react/dist/csr/X";
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type FormEvent,
   type ReactNode,
 } from "react";
+import { bytesToHex } from "viem";
+import type {
+  PonsV2LaunchIntent,
+  RelayExecutionRequest,
+} from "@pons-privacy/sdk";
 import type {
   LaunchApi,
+  LaunchAccount,
   LaunchDraft,
   LaunchPreview,
   LaunchSubmission,
@@ -47,6 +54,7 @@ type DraftErrors = Partial<
   Record<"name" | "symbol" | "logo" | "description", string>
 >;
 type Theme = "light" | "dark";
+type PreparedLaunchAccount = LaunchAccount & { readonly rootWallet: string };
 
 const emptyDraft: LaunchDraft = {
   name: "",
@@ -86,8 +94,12 @@ export function App({
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [depositOpen, setDepositOpen] = useState(false);
   const [walletPickerOpen, setWalletPickerOpen] = useState(false);
-  const [preparedExecutionAccount, setPreparedExecutionAccount] =
-    useState<string>();
+  const [preparedLaunchAccount, setPreparedLaunchAccount] =
+    useState<PreparedLaunchAccount>();
+  const launchRequestRef = useRef<
+    | { readonly previewId: string; readonly request: RelayExecutionRequest }
+    | undefined
+  >(undefined);
   const wallet = useEvmWallet();
 
   const errors = useMemo(() => validateDraft(draft), [draft]);
@@ -99,6 +111,17 @@ export function App({
     document.documentElement.dataset.theme = theme;
     globalThis.localStorage?.setItem("pons-privacy-theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (
+      preparedLaunchAccount &&
+      preparedLaunchAccount.rootWallet.toLowerCase() !==
+        wallet.account?.toLowerCase()
+    ) {
+      setPreparedLaunchAccount(undefined);
+      launchRequestRef.current = undefined;
+    }
+  }, [preparedLaunchAccount, wallet.account]);
 
   function update<K extends keyof LaunchDraft>(
     field: K,
@@ -122,12 +145,30 @@ export function App({
     setBusy("preview");
     setError(undefined);
     try {
-      const result = await api.preview({
-        ...draft,
-        name: draft.name.trim(),
-        symbol,
-      });
+      if (apiMode === "live" && !preparedLaunchAccount) {
+        throw new Error(
+          "Fund a fresh R2 account before reviewing a live launch",
+        );
+      }
+      const result = await api.preview(
+        {
+          ...draft,
+          name: draft.name.trim(),
+          symbol,
+        },
+        preparedLaunchAccount
+          ? publicLaunchAccount(preparedLaunchAccount)
+          : undefined,
+      );
+      if (
+        preparedLaunchAccount &&
+        result.privacyAccount.toLowerCase() !==
+          preparedLaunchAccount.account.toLowerCase()
+      ) {
+        throw new Error("Launch preview returned a different R2 account");
+      }
       setPreview(result);
+      launchRequestRef.current = undefined;
       setAcknowledged(false);
     } catch (cause) {
       setError(message(cause));
@@ -137,13 +178,45 @@ export function App({
   }
 
   async function submit() {
-    if (!preview || !acknowledged || !launchEnabled || busy) return;
+    if (
+      !preview ||
+      !acknowledged ||
+      !launchEnabled ||
+      !preparedLaunchAccount ||
+      !ozAccountClassHash ||
+      busy
+    )
+      return;
     setBusy("submit");
     setError(undefined);
     try {
+      const normalizedDraft = { ...draft, name: draft.name.trim(), symbol };
+      let signed = launchRequestRef.current;
+      if (!signed || signed.previewId !== preview.previewId) {
+        const saltBytes = crypto.getRandomValues(new Uint8Array(32));
+        if (saltBytes.every((byte) => byte === 0)) saltBytes[31] = 1;
+        signed = {
+          previewId: preview.previewId,
+          request: await wallet.prepareLaunchRequest(
+            preparedLaunchAccount.accountIndex,
+            ozAccountClassHash,
+            draftToIntent(normalizedDraft, bytesToHex(saltBytes)),
+          ),
+        };
+        if (
+          signed.request.account.toLowerCase() !==
+          preparedLaunchAccount.account.toLowerCase()
+        ) {
+          throw new Error(
+            "Signed launch request returned a different R2 account",
+          );
+        }
+        launchRequestRef.current = signed;
+      }
       const result = await api.submit(
-        { ...draft, name: draft.name.trim(), symbol },
+        normalizedDraft,
         preview.previewId,
+        signed.request,
       );
       setSubmission(result);
       setPreview(undefined);
@@ -158,6 +231,7 @@ export function App({
     if (busy === "submit") return;
     setPreview(undefined);
     setAcknowledged(false);
+    launchRequestRef.current = undefined;
   }
 
   function reset() {
@@ -260,8 +334,8 @@ export function App({
             <p>
               <small>STRK20 private balance</small>
               <strong>
-                {preparedExecutionAccount
-                  ? `Launcher ready · ${shorten(preparedExecutionAccount)}`
+                {preparedLaunchAccount
+                  ? `Launcher ready · ${shorten(preparedLaunchAccount.account)}`
                   : wallet.account
                     ? "Not yet funded"
                     : "Connect to get started"}
@@ -527,11 +601,17 @@ export function App({
                 <button
                   className="primary-button"
                   type="submit"
-                  disabled={!valid || Boolean(busy)}
+                  disabled={
+                    !valid ||
+                    Boolean(busy) ||
+                    (apiMode === "live" && !preparedLaunchAccount)
+                  }
                 >
                   {busy === "preview"
                     ? "Checking live Pons state…"
-                    : "Review launch"}
+                    : apiMode === "live" && !preparedLaunchAccount
+                      ? "Fund launcher first"
+                      : "Review launch"}
                   {busy !== "preview" ? (
                     <ArrowRight size={17} weight="bold" />
                   ) : null}
@@ -617,8 +697,8 @@ export function App({
             <strong>Token, account, amounts and timing</strong>
           </div>
           <div>
-            <span>Held by the project</span>
-            <strong>Signer, viewing key and proof orchestration</strong>
+            <span>Held in browser memory</span>
+            <strong>O2 signer and STRK20 viewing key</strong>
           </div>
         </section>
       </main>
@@ -642,7 +722,11 @@ export function App({
           draft={{ ...draft, symbol }}
           preview={preview}
           acknowledged={acknowledged}
-          launchEnabled={launchEnabled}
+          launchEnabled={
+            launchEnabled &&
+            Boolean(preparedLaunchAccount) &&
+            Boolean(ozAccountClassHash)
+          }
           busy={busy === "submit"}
           onAcknowledge={setAcknowledged}
           onClose={closeReview}
@@ -687,7 +771,14 @@ export function App({
                   privacyExecutionRunner.submitFundingAction,
               }
             : {})}
-          onReadyForLaunch={setPreparedExecutionAccount}
+          onReadyForLaunch={(account) => {
+            if (!wallet.account) return;
+            setPreparedLaunchAccount({
+              ...account,
+              rootWallet: wallet.account,
+            });
+            launchRequestRef.current = undefined;
+          }}
           onClose={() => setDepositOpen(false)}
         />
       ) : null}
@@ -1021,6 +1112,31 @@ function validateDraft(draft: LaunchDraft): DraftErrors {
   if (encoder.encode(draft.description).length > 2_048)
     errors.description = "2048 UTF-8 bytes maximum";
   return errors;
+}
+
+function publicLaunchAccount(account: PreparedLaunchAccount): LaunchAccount {
+  return {
+    account: account.account,
+    owner: account.owner,
+    accountIndex: account.accountIndex,
+  };
+}
+
+function draftToIntent(
+  draft: LaunchDraft,
+  salt: `0x${string}`,
+): PonsV2LaunchIntent {
+  return {
+    name: draft.name,
+    symbol: draft.symbol,
+    logo: draft.logo,
+    description: draft.description,
+    socials: { ...draft.socials },
+    creatorTaxBps: draft.creatorTaxBps,
+    buybackEnabled: draft.buybackEnabled,
+    launchConfigId: BigInt(draft.launchConfigId),
+    salt,
+  };
 }
 
 function shorten(value: string, head = 6, tail = 4): string {

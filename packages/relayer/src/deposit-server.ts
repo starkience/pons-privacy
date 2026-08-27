@@ -13,11 +13,16 @@ import type {
   LayerswapQuote,
   LayerswapSwap,
 } from "@pons-privacy/sdk";
+import { LayerswapRequestError } from "@pons-privacy/sdk";
 import { isAddress, type Address } from "viem";
 import {
   forwardAvnuPaymasterRequest,
   type AvnuPaymasterProxyOptions,
 } from "./paymaster-proxy.js";
+import {
+  MemorySwapOperationStore,
+  type SwapOperationStore,
+} from "./swap-operation-store.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const BASE_UNIT_PATTERN = /^[1-9][0-9]*$/;
@@ -28,6 +33,8 @@ export type LayerswapDepositGateway = Pick<
   | "limits"
   | "createReturnSwap"
   | "createFundingSwap"
+  | "recoverReturnSwap"
+  | "recoverFundingSwap"
   | "getSwap"
   | "getFundingSwap"
   | "getFundingAction"
@@ -39,6 +46,7 @@ export interface DepositServerOptions {
   readonly swapCreationEnabled: boolean;
   readonly fundingSwapCreationEnabled: boolean;
   readonly paymaster?: AvnuPaymasterProxyOptions;
+  readonly operationStore?: SwapOperationStore;
 }
 
 export function startDepositServer(
@@ -47,6 +55,8 @@ export function startDepositServer(
   options: DepositServerOptions,
 ) {
   const host = options.host ?? "127.0.0.1";
+  const operationStore =
+    options.operationStore ?? new MemorySwapOperationStore();
   return createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", "http://localhost");
@@ -114,8 +124,19 @@ export function startDepositServer(
           referenceId: operationId,
           useGasless: false,
         };
-        const prepared = await layerswap.createReturnSwap(createRequest);
-        return json(response, 201, prepared);
+        const prepared = await createOrRecoverSwap(
+          operationStore,
+          {
+            operationId,
+            direction: "deposit",
+            amount: amountIn.toString(),
+            sourceAddress,
+            destinationAddress,
+          },
+          () => layerswap.createReturnSwap(createRequest),
+          () => layerswap.recoverReturnSwap(createRequest),
+        );
+        return json(response, prepared.created ? 201 : 200, prepared.value);
       }
 
       if (request.method === "POST" && url.pathname === "/v1/funding/swaps") {
@@ -133,13 +154,25 @@ export function startDepositServer(
           "destinationAddress",
         );
         const operationId = operationReference(body.operationId);
-        const prepared = await layerswap.createFundingSwap({
+        const createRequest = {
           amountIn,
           sourceAddress,
           destinationAddress,
           referenceId: operationId,
-        });
-        return json(response, 201, prepared);
+        };
+        const prepared = await createOrRecoverSwap(
+          operationStore,
+          {
+            operationId,
+            direction: "funding",
+            amount: amountIn.toString(),
+            sourceAddress,
+            destinationAddress,
+          },
+          () => layerswap.createFundingSwap(createRequest),
+          () => layerswap.recoverFundingSwap(createRequest),
+        );
+        return json(response, prepared.created ? 201 : 200, prepared.value);
       }
 
       const fundingMatch =
@@ -199,6 +232,48 @@ export function startDepositServer(
       return json(response, status, { error: message });
     }
   }).listen(port, host);
+}
+
+async function createOrRecoverSwap<T extends { swap: { id: string } }>(
+  store: SwapOperationStore,
+  input: Parameters<SwapOperationStore["begin"]>[0],
+  create: () => Promise<T>,
+  recover: () => Promise<T>,
+): Promise<{ readonly value: T; readonly created: boolean }> {
+  const reservation = await store.begin(input);
+  if (!reservation.created) {
+    try {
+      const value = await recover();
+      await store.resolve(input.operationId, value.swap.id);
+      return { value, created: false };
+    } catch (error) {
+      if (isProviderNotFound(error)) {
+        throw new HttpError(
+          409,
+          "operation is reserved and awaiting LayerSwap reconciliation",
+        );
+      }
+      throw error;
+    }
+  }
+  try {
+    const value = await create();
+    await store.resolve(input.operationId, value.swap.id);
+    return { value, created: true };
+  } catch (creationError) {
+    try {
+      const value = await recover();
+      await store.resolve(input.operationId, value.swap.id);
+      return { value, created: false };
+    } catch (recoveryError) {
+      if (isProviderNotFound(recoveryError)) throw creationError;
+      throw recoveryError;
+    }
+  }
+}
+
+function isProviderNotFound(error: unknown): boolean {
+  return error instanceof LayerswapRequestError && error.status === 404;
 }
 
 function amountFromQuery(url: URL): bigint {

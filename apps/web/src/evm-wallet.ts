@@ -7,13 +7,18 @@ import {
   PonsOperationJournal,
   PONS_PRIVACY_IDENTITY_MESSAGE,
   ponsPrivacyAccountFactoryAbi,
+  preparePonsLaunchRelayRequest,
   ROBINHOOD_MAINNET_CHAIN_ID,
   robinhood,
   type DerivedPonsPrivacyIdentity,
   type LayerswapDepositAction,
+  type PonsV2LaunchIntent,
+  type RelayExecutionRequest,
   type ResolvedPonsPrivacyRoute,
 } from "@pons-privacy/sdk";
 import {
+  createPublicClient,
+  custom,
   decodeFunctionResult,
   encodeFunctionData,
   erc20Abi,
@@ -71,6 +76,11 @@ export interface EvmWalletState {
   openOperationJournal(
     ozAccountClassHash: string,
   ): Promise<PonsOperationJournal>;
+  prepareLaunchRequest(
+    accountIndex: number,
+    ozAccountClassHash: string,
+    intent: PonsV2LaunchIntent,
+  ): Promise<RelayExecutionRequest>;
   submitDepositActions(
     actions: readonly LayerswapDepositAction[],
   ): Promise<readonly Hex[]>;
@@ -334,6 +344,29 @@ export function useEvmWallet(): EvmWalletState {
     [account, derivePrivacyIdentity],
   );
 
+  const prepareLaunchRequest = useCallback(
+    async (
+      accountIndex: number,
+      ozAccountClassHash: string,
+      intent: PonsV2LaunchIntent,
+    ): Promise<RelayExecutionRequest> => {
+      if (!active)
+        throw new Error("Connect the controller wallet before launching");
+      const route = await derivePrivacyRoute(accountIndex, ozAccountClassHash);
+      const publicClient = createPublicClient({
+        chain: robinhood,
+        transport: custom(active.provider),
+      });
+      return preparePonsLaunchRelayRequest({
+        route,
+        accountIndex,
+        intent,
+        publicClient,
+      });
+    },
+    [active, derivePrivacyRoute],
+  );
+
   const submitDepositActions = useCallback(
     async (
       actions: readonly LayerswapDepositAction[],
@@ -410,6 +443,7 @@ export function useEvmWallet(): EvmWalletState {
     derivePrivacyIdentity,
     derivePrivacyRoute,
     openOperationJournal,
+    prepareLaunchRequest,
     submitDepositActions,
     disconnect,
     clearError: () => setError(undefined),

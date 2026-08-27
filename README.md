@@ -67,9 +67,15 @@ The launch frontend now includes injected EVM wallet discovery, Robinhood networ
 quotes in both directions, local route derivation, strict LayerSwap action execution, and separate
 “Make private” and “Fund launcher” controls. A signature-derived AES-GCM journal persists only
 encrypted operation state, so interrupted S2/R2 routes can be recovered without storing keys,
-proofs, or route addresses in clear text. It never receives the LayerSwap, AVNU, or relayer
-credentials. Mainnet deposit, outbound funding, and launch submission remain disabled by separate
-kill switches. No token has been launched from this repository.
+proofs, or route addresses in clear text. LayerSwap creation is also reserved durably by operation
+UUID before the provider call and recovered by that provider reference after retries or restarts.
+
+After R2 funding completes, the browser builds and signs the exact Pons launch with its memory-held
+O2 key. The application backend independently checks the funded factory-derived R2, reviewed
+metadata, live Pons economics, signature, nonce policy, and idempotency record before forwarding to
+the internal Pons relayer. It never receives the identity signature, O2 private key, viewing key,
+proof, or partner credentials. Mainnet deposit, outbound funding, and launch submission remain
+disabled by separate kill switches. No token has been launched from this repository.
 
 LayerSwap is the selected transport. The backend adapter pins both USDG/USDC directions, protects
 the partner credential, and strictly parses limits, quotes, swap creation, status, transactions,
@@ -98,6 +104,7 @@ The RC.4 Privacy SDK is published through GitHub Packages. Configure a trusted n
 ```sh
 pnpm install
 pnpm dev:deposit-api
+pnpm dev:app-api
 pnpm dev:web
 pnpm test
 pnpm typecheck

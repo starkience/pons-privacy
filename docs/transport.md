@@ -42,9 +42,11 @@ Provider delivery and STRK20 note completion are different durable states. Persi
 before funds move and independently reconcile both chains. The browser now stores its recovery
 state in an AES-GCM journal keyed by the user's deterministic signature. It persists ciphertext
 only and can re-fetch validated deposit actions for an owned pending order after a reload. The
-operation UUID is also the LayerSwap reference ID, but production still needs a durable backend
-lookup by that reference before reissuing a create request; the browser cannot close the crash
-window between provider creation and receiving the swap ID by itself.
+operation UUID is also the LayerSwap reference ID. The backend now durably reserves that UUID and
+route before creation, then looks up the provider order by the same reference after an ambiguous
+response or restart. It will not blindly reissue a create call while reconciliation is pending.
+The local file store is for a single instance; production replicas require transactional shared
+storage, provider/webhook monitoring, and independent onchain balance/transaction reconciliation.
 
 ## Mainnet release gate
 

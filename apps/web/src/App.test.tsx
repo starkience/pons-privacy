@@ -103,7 +103,7 @@ describe("Pons Privacy launch frontend", () => {
     expect(screen.getByText(/intentionally disabled/i)).toBeInTheDocument();
   });
 
-  it("submits through the injected backend only when explicitly enabled", async () => {
+  it("requires a funded R2 before a live launch can be reviewed", async () => {
     const launchApi = api();
     render(
       <App
@@ -114,16 +114,10 @@ describe("Pons Privacy launch frontend", () => {
       />,
     );
     fillRequiredFields();
-    fireEvent.click(screen.getByRole("button", { name: /review launch/i }));
-    await screen.findByRole("dialog", { name: /public and irreversible/i });
-    fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(
-      screen.getByRole("button", { name: /confirm protected launch/i }),
-    );
-    await waitFor(() => expect(launchApi.submit).toHaveBeenCalledOnce());
     expect(
-      await screen.findByRole("dialog", { name: /protected queue/i }),
-    ).toBeInTheDocument();
+      screen.getByRole("button", { name: /fund launcher first/i }),
+    ).toBeDisabled();
+    expect(launchApi.preview).not.toHaveBeenCalled();
   });
 
   it("opens the LayerSwap private-deposit route", () => {

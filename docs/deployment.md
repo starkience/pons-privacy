@@ -77,12 +77,15 @@ remain false until that set is confirmed and the preflight passes unchanged.
 
 ```sh
 pnpm dev:deposit-api
+pnpm dev:app-api
 pnpm dev:web
 ```
 
-The LayerSwap server binds to loopback by default. Production must use TLS, authentication, and
-rate-limits. The browser operation journal is encrypted under the deterministic wallet signature;
-production still needs server-side reconciliation and monitoring. The AVNU proxy allowlists only
+The LayerSwap and launch application servers bind to loopback by default. The browser operation
+journal is encrypted under the deterministic wallet signature, while backend LayerSwap and launch
+idempotency records are stored atomically under `.data/` by default. Those file stores are
+single-instance only. Production must use TLS, authenticated user sessions, rate/spend limits,
+transactional shared storage, and provider/onchain reconciliation. The AVNU proxy allowlists only
 the four paymaster methods and must never log request/response bodies.
 
 ## Kill switches
@@ -92,6 +95,7 @@ Keep these false until the funded round-trip gate passes:
 ```text
 LAYERSWAP_SWAP_CREATION_ENABLED=false
 LAYERSWAP_OUTBOUND_SWAP_CREATION_ENABLED=false
+LAUNCH_SUBMISSION_ENABLED=false
 VITE_MAINNET_PRIVACY_EXECUTION_ENABLED=false
 VITE_MAINNET_LAUNCH_ENABLED=false
 BROADCAST=false

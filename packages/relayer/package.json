@@ -12,6 +12,7 @@
     "test": "vitest run",
     "start": "node dist/main.js",
     "start:deposits": "node dist/deposit-main.js",
+    "start:application": "node dist/application-main.js",
     "launch:mainnet": "node dist/launch-mainnet.js",
     "format:check": "prettier --check 'src/**/*.{ts,md}' README.md"
   },

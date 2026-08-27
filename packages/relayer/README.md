@@ -19,4 +19,19 @@ server-side and exposes:
 
 Both mainnet swap gates default to false. Outbound LayerSwap actions are accepted only when they
 contain one exact Starknet-mainnet USDC transfer for the requested amount. Request/response bodies
-at the paymaster boundary contain proofs and signatures and must never be logged.
+at the paymaster boundary contain proofs and signatures and must never be logged. Creation is
+reserved in `LAYERSWAP_OPERATION_STORE_PATH` before calling LayerSwap; an ambiguous retry recovers
+the provider order by the same UUID reference instead of blindly creating another order.
+
+## Launch application API
+
+`pnpm dev:app-api` starts the user-facing application boundary on `127.0.0.1:8789`. Preview verifies
+that R2 is factory-derived and funded, pins live Pons economics, and persists the reviewed draft.
+Submission accepts only a user-signed R2 execution request, rechecks its O2 signature and exact Pons
+launch semantics, and forwards it to the authenticated loopback relayer. Durable idempotency in
+`LAUNCH_OPERATION_STORE_PATH` prevents the same reviewed request from being relayed twice.
+
+`LAUNCH_SUBMISSION_ENABLED` defaults to false and is independent of the relayer broadcast gate.
+The file stores support a single service instance. A multi-instance deployment must replace them
+with transactional shared storage and add user-session, rate/spend-limit, monitoring, and pending
+transaction reconciliation at the production edge.

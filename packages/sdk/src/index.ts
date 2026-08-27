@@ -6,6 +6,7 @@ export * from "./client.js";
 export * from "./execution.js";
 export * from "./identity.js";
 export * from "./layerswap.js";
+export * from "./launch-request.js";
 export * from "./operation-journal.js";
 export * from "./relay-http.js";
 export * from "./transport.js";

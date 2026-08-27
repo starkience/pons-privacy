@@ -8,6 +8,16 @@ import type {
 
 export const LAYERSWAP_API_URL = "https://api.layerswap.io/api/v2";
 export const LAYERSWAP_QUOTE_TTL_MS = 30_000;
+
+export class LayerswapRequestError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "LayerswapRequestError";
+  }
+}
 export const LAYERSWAP_ROBINHOOD_USDG_ADDRESS =
   "0x5fc5360d0400a0fd4f2af552add042d716f1d168" as Address;
 export const LAYERSWAP_STARKNET_USDC_ADDRESS =
@@ -259,7 +269,8 @@ export class LayerswapQuoteClient {
       !response.ok ||
       (payload.error !== undefined && payload.error !== null)
     ) {
-      throw new Error(
+      throw new LayerswapRequestError(
+        response.status,
         errorMessage(payload.error) ??
           `LayerSwap request failed with HTTP ${response.status}`,
       );
@@ -269,6 +280,65 @@ export class LayerswapQuoteClient {
 }
 
 export class LayerswapClient extends LayerswapQuoteClient {
+  async recoverFundingSwap(
+    request: CreateLayerswapFundingSwap,
+  ): Promise<LayerswapPreparedFundingSwap> {
+    const referenceId = reference(request.referenceId);
+    const sourceAddress = starknetAddress(
+      request.sourceAddress,
+      "sourceAddress",
+    );
+    const destinationAddress = evmAddress(
+      request.destinationAddress,
+      "destinationAddress",
+    );
+    const swap = await this.getFundingSwap(referenceId);
+    assertFundingSwap(swap, {
+      amountIn: request.amountIn,
+      sourceAddress,
+      destinationAddress,
+      referenceId,
+    });
+    if (swap.status !== "user_transfer_pending") {
+      throw new Error("LayerSwap funding order no longer accepts a transfer");
+    }
+    const [quote, depositAction] = await Promise.all([
+      this.quote("fund-robinhood", request.amountIn),
+      this.getFundingAction(swap.id, sourceAddress, request.amountIn),
+    ]);
+    return { quote, swap, depositAction };
+  }
+
+  async recoverReturnSwap(
+    request: CreateLayerswapReturnSwap,
+  ): Promise<LayerswapPreparedSwap> {
+    const referenceId = reference(request.referenceId);
+    const sourceAddress = evmAddress(request.sourceAddress, "sourceAddress");
+    const refundAddress = evmAddress(request.refundAddress, "refundAddress");
+    if (sourceAddress.toLowerCase() !== refundAddress.toLowerCase()) {
+      throw new Error("LayerSwap refund address must equal the source address");
+    }
+    const destinationAddress = starknetAddress(
+      request.destinationAddress,
+      "destinationAddress",
+    );
+    const swap = await this.getSwap(referenceId);
+    assertReturnSwap(swap, {
+      amountIn: request.amountIn,
+      sourceAddress,
+      destinationAddress,
+      referenceId,
+    });
+    if (swap.status !== "user_transfer_pending") {
+      throw new Error("LayerSwap return order no longer accepts a transfer");
+    }
+    const [quote, depositActions] = await Promise.all([
+      this.quote("return-to-strk20", request.amountIn),
+      this.getDepositActions(swap.id, sourceAddress, request.amountIn),
+    ]);
+    return { quote, swap, depositActions };
+  }
+
   async createFundingSwap(
     request: CreateLayerswapFundingSwap,
   ): Promise<LayerswapPreparedFundingSwap> {

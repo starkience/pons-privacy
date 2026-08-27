@@ -377,6 +377,45 @@ describe("authenticated LayerSwap client", () => {
     });
   });
 
+  it("recovers a return order by its stable partner reference", async () => {
+    const preparedBody = (await preparedSwap().json()) as {
+      data: { swap: unknown; deposit_actions: unknown };
+    };
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes(`/swaps/${SWAP_ID}/deposit_actions`)) {
+        return Response.json({
+          error: null,
+          data: { value: preparedBody.data.deposit_actions },
+        });
+      }
+      if (url.includes(`/swaps/${REFERENCE_ID}`)) {
+        return Response.json({
+          error: null,
+          data: { swap: preparedBody.data.swap },
+        });
+      }
+      if (url.includes("/quote?")) return response();
+      throw new Error(`unexpected URL ${url}`);
+    });
+    const client = new LayerswapClient({
+      baseUrl: "https://layerswap.example/api/v2",
+      apiKey: "partner-key",
+      fetch: fetchMock,
+    });
+    await expect(
+      client.recoverReturnSwap({
+        amountIn: 10n * USDC,
+        sourceAddress: SOURCE,
+        destinationAddress: DESTINATION,
+        refundAddress: SOURCE,
+        referenceId: REFERENCE_ID,
+      }),
+    ).resolves.toMatchObject({
+      swap: { id: SWAP_ID, referenceId: REFERENCE_ID },
+      depositActions: [{ amount: 10n * USDC }],
+    });
+  });
+
   it("requires the partner key before swap creation", async () => {
     const client = new LayerswapClient({
       baseUrl: "https://layerswap.example/api/v2",

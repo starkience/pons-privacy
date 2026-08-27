@@ -13,10 +13,10 @@ pnpm dev:web
 ```
 
 The default `demo` mode returns a local launch preview and keeps mainnet deposit and launch controls
-locked. Start `pnpm dev:deposit-api` in a second terminal; the Vite development server proxies
-`/deposit-api` to that backend. The backend holds the LayerSwap partner key and makes authenticated
-V2 requests. Copy `.env.example` to an ignored `.env.local` only when connecting a deployed
-application backend.
+locked. Start `pnpm dev:deposit-api` and `pnpm dev:app-api` in separate terminals; the Vite
+development server proxies `/deposit-api` and `/api` to those loopback services. The backend holds
+the LayerSwap and relayer credentials. Copy `apps/web/.env.example` to an ignored
+`apps/web/.env.local` only when connecting the live application backend.
 
 ## Private deposits
 
@@ -42,18 +42,24 @@ are available now.
 
 ## Application API
 
-The browser calls an authenticated application backend, never the policy relayer directly:
+The browser calls the application backend, never the policy relayer directly:
 
-- `POST /v1/launches/preview` validates metadata, reads current Pons economics, derives the fresh
-  execution account, and returns an expiring preview;
-- `POST /v1/launches` accepts the reviewed draft, preview ID, and idempotency key, then queues the
-  launch through the user-owned execution account and internal policy relayer.
+- `POST /v1/launches/preview` validates metadata, verifies the owner/index against the deployed
+  account factory, requires R2 funding, reads current Pons economics, and returns an expiring
+  preview;
+- the browser creates the nonzero salt and signs the exact reviewed execution with memory-held O2;
+- `POST /v1/launches` accepts that signed request, binds it to the preview and idempotency key,
+  independently revalidates the signature and Pons semantics, and forwards it to the internal
+  policy relayer.
 
-Both requests use same-origin credentials. The backend must enforce the user session, CSRF and
-rate-limit policy, revalidate live Pons state, validate or proxy artwork, persist an operation
-journal, and call the internal authenticated relayer. It must never request or receive the identity
-signature, derived signer/viewing keys, relayer API key, proof witness, or raw private-note payload.
+Both requests use same-origin credentials and a non-simple application header. The API implements
+strict body limits, exact-origin enforcement when configured, durable previews/submission
+idempotency, live Pons revalidation, and the internal authenticated-relayer call. A production edge
+must still enforce its user session, rate/spend limits, artwork policy, and abuse controls. The API
+must never request or receive the identity signature, derived signer/viewing keys, relayer API key,
+proof witness, or raw private-note payload.
 
 `VITE_MAINNET_LAUNCH_ENABLED=true` only unlocks the frontend control; it is not an authorization
-boundary. Keep it `false` until the application API, operation journal, transport route, monitoring,
-and release gates are deployed and reviewed.
+boundary. The independent `LAUNCH_SUBMISSION_ENABLED` backend switch also defaults to `false`.
+Keep both false until the funded transport proof, monitoring, abuse controls, and release gates are
+deployed and reviewed.
