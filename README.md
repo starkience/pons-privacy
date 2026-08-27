@@ -80,8 +80,9 @@ Robinhood mainnet fork; its state changes are ephemeral and do not submit mainne
 
 ## Deployments
 
-Pons V2 and USDG already exist on Robinhood mainnet. This project only deploys its execution-account
-factory and runs a policy relayer. No project factory deployment is recorded yet. See
+Pons V2 and USDG already exist on Robinhood mainnet. The project execution-account factory is
+deployed at `0x2f04549436Aeb3693E849E6C8121CA901edF7Ce4`; account instances deploy
+counterfactually on first execution. The policy relayer is not deployed yet. See
 [deployment](docs/deployment.md).
 
 Prototype, unaudited. Do not deploy with real value before independent review of the account,

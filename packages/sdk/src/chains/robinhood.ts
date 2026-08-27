@@ -2,6 +2,9 @@ import { defineChain, getAddress, type Address } from "viem";
 
 export const ROBINHOOD_MAINNET_CHAIN_ID = 4663 as const;
 export const ROBINHOOD_TESTNET_CHAIN_ID = 46630 as const;
+export const PONS_PRIVACY_ACCOUNT_FACTORY_ROBINHOOD = getAddress(
+  "0x2f04549436Aeb3693E849E6C8121CA901edF7Ce4",
+);
 
 export const robinhood = defineChain({
   id: ROBINHOOD_MAINNET_CHAIN_ID,

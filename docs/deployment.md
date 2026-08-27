@@ -6,7 +6,7 @@
 | ---------------------------- | -------------------------------- | ------------------------------------ |
 | Pons V2                      | Robinhood mainnet, chain `4663`  | existing external deployment         |
 | USDG                         | Robinhood mainnet                | existing Pons-approved asset         |
-| Pons Privacy account factory | Robinhood mainnet                | not deployed                         |
+| Pons Privacy account factory | Robinhood mainnet                | deployed                             |
 | Pons relayer                 | offchain, Robinhood RPC          | not deployed                         |
 | Pons V2 test stack           | Robinhood testnet, chain `46630` | no public addresses published        |
 | STRK20 privacy pool          | Starknet mainnet                 | existing external RC.4 deployment    |
@@ -30,8 +30,18 @@ the operation journal and distributed nonce lock are implemented. See
 
 ## Deploy the account factory
 
-Use a dedicated encrypted Foundry keystore and fund it with Robinhood ETH. Do not place a deployer
-key in an environment file.
+Mainnet deployment:
+
+- factory: `0x2f04549436Aeb3693E849E6C8121CA901edF7Ce4`;
+- transaction: `0x3beb8f6b6c52c21f9a14cef64391b7f21e2c8eb1fcb55f5b1a39f9c02dee0282`;
+- block: `47293691`; and
+- runtime code hash: `0x7f8a4214e70963f328cad322e81053af12f8965cdbeeb73dee7971bca8a116ec`.
+
+The deployed runtime exactly matched the locally compiled Solidity `0.8.30` artifact. Full compiler
+and receipt metadata is recorded in `deployments/robinhood-mainnet.json`.
+
+For a future deterministic redeployment, use a dedicated encrypted Foundry keystore and fund it
+with Robinhood ETH. Do not place a deployer key in an environment file.
 
 ```sh
 forge script evm/script/Deploy.s.sol:Deploy \
@@ -41,9 +51,7 @@ forge script evm/script/Deploy.s.sol:Deploy \
   --broadcast
 ```
 
-Before broadcasting, repeat `pnpm test:fork`, obtain independent account/relayer review, and record
-the factory address, transaction, block, compiler settings, runtime byte length, and runtime code
-hash in a deployment manifest.
+Before any future broadcast, repeat `pnpm test:fork` and obtain independent account/relayer review.
 
 ## Run the relayer
 
