@@ -1,4 +1,6 @@
 export * from "./config.js";
 export * from "./constants.js";
-export * from "./custodian.js";
+export * from "./private-paymaster.js";
 export * from "./preflight.js";
+export * from "./transport-account.js";
+export * from "./user-session.js";

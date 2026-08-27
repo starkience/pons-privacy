@@ -223,6 +223,75 @@ function preparedSwap(
 }
 
 describe("authenticated LayerSwap client", () => {
+  it("creates a funding swap from a fresh Starknet transport account", async () => {
+    const transportSource = DESTINATION;
+    const robinhoodDestination = SOURCE;
+    const fundingRecipient =
+      "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      expect(JSON.parse(String(init?.body))).toMatchObject({
+        source_network: "STARKNET_MAINNET",
+        source_token: "USDC",
+        destination_network: "ROBINHOOD_MAINNET",
+        destination_token: "USDG",
+        source_address: transportSource,
+        destination_address: robinhoodDestination,
+        refund_address: transportSource,
+        use_deposit_address: false,
+      });
+      return fundingPreparedSwap(fundingRecipient);
+    });
+    const client = new LayerswapClient({
+      baseUrl: "https://layerswap.example/api/v2",
+      apiKey: "partner-key",
+      fetch: fetchMock,
+    });
+
+    await expect(
+      client.createFundingSwap({
+        amountIn: 10n * USDC,
+        sourceAddress: transportSource,
+        destinationAddress: robinhoodDestination,
+        referenceId: REFERENCE_ID,
+      }),
+    ).resolves.toMatchObject({
+      swap: {
+        sourceAddress: transportSource.toLowerCase(),
+        destinationAddress: robinhoodDestination,
+      },
+      depositAction: {
+        token: "USDC",
+        amount: 10n * USDC,
+        recipient: fundingRecipient,
+        call: {
+          contractAddress: LAYERSWAP_STARKNET_USDC_ADDRESS,
+          entrypoint: "transfer",
+          calldata: [fundingRecipient, "10000000", "0"],
+        },
+      },
+    });
+  });
+
+  it("rejects a funding action with an extra or substituted Starknet call", async () => {
+    const client = new LayerswapClient({
+      baseUrl: "https://layerswap.example/api/v2",
+      apiKey: "partner-key",
+      fetch: async () =>
+        fundingPreparedSwap("0x123", [
+          starknetTransferCall("0x123"),
+          starknetTransferCall("0x456"),
+        ]),
+    });
+    await expect(
+      client.createFundingSwap({
+        amountIn: 10n * USDC,
+        sourceAddress: DESTINATION,
+        destinationAddress: SOURCE,
+        referenceId: REFERENCE_ID,
+      }),
+    ).rejects.toThrow(/exactly one Starknet call/);
+  });
+
   it("creates only the pinned Robinhood USDG to Starknet USDC swap", async () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       expect(new Headers(init?.headers).get("X-LS-APIKEY")).toBe("partner-key");
@@ -332,3 +401,76 @@ describe("authenticated LayerSwap client", () => {
     });
   });
 });
+
+function fundingPreparedSwap(
+  recipient: string,
+  calls: readonly Record<string, unknown>[] = [starknetTransferCall(recipient)],
+): Response {
+  return new Response(
+    JSON.stringify({
+      error: null,
+      data: {
+        quote: {
+          source_network: { name: "STARKNET_MAINNET" },
+          source_token: { symbol: "USDC" },
+          destination_network: { name: "ROBINHOOD_MAINNET" },
+          destination_token: { symbol: "USDG" },
+          requested_amount: 10,
+          receive_amount: 9.63,
+          min_receive_amount: 9.58,
+          total_fee: 0.37,
+          avg_completion_time: "00:00:22.25",
+          path: [{ provider: "LAYERSWAP", order: 0 }],
+        },
+        swap: {
+          id: SWAP_ID,
+          created_date: "2026-08-27T12:00:00Z",
+          source_network: { name: "STARKNET_MAINNET" },
+          source_token: {
+            symbol: "USDC",
+            contract: LAYERSWAP_STARKNET_USDC_ADDRESS,
+            decimals: 6,
+          },
+          destination_network: { name: "ROBINHOOD_MAINNET" },
+          destination_token: {
+            symbol: "USDG",
+            contract: LAYERSWAP_ROBINHOOD_USDG_ADDRESS,
+            decimals: 6,
+          },
+          requested_amount: 10,
+          destination_address: SOURCE,
+          source_address: DESTINATION,
+          status: "user_transfer_pending",
+          fail_reason: null,
+          use_deposit_address: false,
+          metadata: { sequence_number: 1, reference_id: REFERENCE_ID },
+          transactions: [],
+        },
+        deposit_actions: [
+          {
+            type: "transfer",
+            order: 0,
+            network: { name: "STARKNET_MAINNET" },
+            token: {
+              symbol: "USDC",
+              contract: LAYERSWAP_STARKNET_USDC_ADDRESS,
+              decimals: 6,
+            },
+            to_address: recipient,
+            amount: 10,
+            amount_in_base_units: "10000000",
+            call_data: JSON.stringify(calls),
+          },
+        ],
+      },
+    }),
+  );
+}
+
+function starknetTransferCall(recipient: string): Record<string, unknown> {
+  return {
+    contractAddress: LAYERSWAP_STARKNET_USDC_ADDRESS,
+    entrypoint: "transfer",
+    calldata: [recipient, "10000000", "0"],
+  };
+}

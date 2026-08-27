@@ -2,6 +2,8 @@
 
 Frontend-first private-balance and launch flow for Pons V2 on Robinhood Chain. Users connect an
 injected EVM wallet such as MetaMask, Phantom, or Robinhood Wallet. No Starknet wallet is required.
+One fixed non-transaction signature derives the user's S1, viewing key, fresh S2 transport
+accounts, and fresh Robinhood owners locally; derived secrets remain in browser memory.
 
 ## Local development
 
@@ -24,10 +26,11 @@ the selected wallet to Robinhood Chain. Quote review is live and pinned to:
 Robinhood USDG → Starknet USDC → STRK20
 ```
 
-The browser does not call LayerSwap directly and never receives the partner API key. The backend
-implements pinned creation, status, and deposit-action parsing behind a mainnet gate that is
-disabled by default. It will return only narrowly typed wallet actions after the funded route proof
-is complete. Until then, the deposit modal intentionally stops after quote review.
+The browser does not call LayerSwap or AVNU directly and never receives either partner key. The
+backend implements pinned creation, status, strict action parsing, and a narrow paymaster proxy.
+Inbound and outbound mainnet creation have separate disabled-by-default gates. Until the funded
+route proof is complete, the deposit modal stops after quote review and local privacy-account
+creation.
 
 ## Application API
 
@@ -36,12 +39,12 @@ The browser calls an authenticated application backend, never the policy relayer
 - `POST /v1/launches/preview` validates metadata, reads current Pons economics, derives the fresh
   execution account, and returns an expiring preview;
 - `POST /v1/launches` accepts the reviewed draft, preview ID, and idempotency key, then queues the
-  launch through the project-held service.
+  launch through the user-owned execution account and internal policy relayer.
 
 Both requests use same-origin credentials. The backend must enforce the user session, CSRF and
 rate-limit policy, revalidate live Pons state, validate or proxy artwork, persist an operation
-journal, and call the internal authenticated relayer. It must never return a signer, viewing key,
-relayer API key, proof witness, or raw private note payload to the browser.
+journal, and call the internal authenticated relayer. It must never request or receive the identity
+signature, derived signer/viewing keys, relayer API key, proof witness, or raw private-note payload.
 
 `VITE_MAINNET_LAUNCH_ENABLED=true` only unlocks the frontend control; it is not an authorization
 boundary. Keep it `false` until the application API, operation journal, transport route, monitoring,

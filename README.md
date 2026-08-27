@@ -7,6 +7,7 @@ as creator and trader rather than the user's connected/root wallet.
 
 ```text
 STRK20 private USDC
+  → fresh user-derived Starknet transport account (S2)
   → validated USDC/USDG transport
   → fresh PonsPrivacyAccount on Robinhood
   → Pons launch / buy / sell
@@ -40,21 +41,27 @@ Phase 1 is implemented:
 - Pons-only relayer policy; and
 - Robinhood-mainnet fork proof: counterfactual deploy → Pons USDG launch → buy → sell.
 
-The project-held STRK20 mainnet client is also implemented against Privacy SDK
-`0.14.3-rc.4`. The backend holds the Starknet signer and viewing key, discovers mature USDC notes,
-requests proofs from the pinned hosted prover, and submits withdrawals. End users therefore do not
-need a Starknet wallet or Starknet confirmation prompts. This is custodial: the project can inspect
-and spend those notes.
+The STRK20 mainnet client is implemented against Privacy SDK `0.14.3-rc.4` with user-controlled,
+memory-only keys. One non-transaction signature from the connected Robinhood EVM wallet derives
+the user's root-linked Starknet account (S1), viewing key, fresh per-operation Starknet transport
+accounts (S2), and fresh Robinhood execution owners. No Ready/Xverse wallet or Starknet prompt is
+required, and the project does not receive the signature or derived private/viewing keys.
+
+The outbound invariant is enforced in code: S1 cannot be the public bridge source. The hosted
+prover builds a private withdrawal to S2, AVNU's private paymaster submits the proof, and S2 then
+executes LayerSwap's exact one-call USDC action through the standard paymaster. LayerSwap refunds
+to S2 and delivers USDG to fresh Robinhood account R2. The provider can still correlate the order's
+amount, timing, and two public edges.
 
 The launch frontend now includes injected EVM wallet discovery, Robinhood network switching, a
-private-balance surface, and server-backed live LayerSwap quote review for Robinhood USDG →
-Starknet USDC. It never receives project custody keys, the LayerSwap partner key, or the relayer
-credential. Mainnet deposit execution and launch submission remain disabled. No token has been
-launched from this repository.
+private-balance surface, local privacy-account derivation, and server-backed live LayerSwap quote
+review for Robinhood USDG → Starknet USDC. It never receives the LayerSwap, AVNU, or relayer
+credentials. Mainnet deposit, outbound funding, and launch submission remain disabled by separate
+kill switches. No token has been launched from this repository.
 
 LayerSwap is the selected transport. The backend adapter pins both USDG/USDC directions, protects
 the partner credential, and strictly parses limits, quotes, swap creation, status, transactions,
-and deposit actions. Mainnet creation and wallet signing remain locked until bidirectional
+and deposit actions. Mainnet creation and transfer signing remain locked until bidirectional
 small-value tests prove contract senders, arbitrary recipients, fees, expiry, refunds,
 interruption recovery, and exact delivery.
 
@@ -65,7 +72,7 @@ apps/web/            EVM wallet, private-deposit quote, launch form, and locked 
 evm/                 PonsPrivacyAccount, factory, deployment script, Foundry tests
 packages/sdk/        Robinhood config, Pons adapter, execution signing, transport types
 packages/relayer/    strict Pons semantic relayer and HTTP service
-packages/strk20/     project-held STRK20 discovery, proving, withdrawal, and preflight
+packages/strk20/     user-controlled proving, private paymaster, S2 execution, and preflight
 docs/                architecture, privacy, transport, deployment, phased plan
 ```
 
@@ -99,4 +106,4 @@ counterfactually on first execution. The policy relayer is not deployed yet. See
 [deployment](docs/deployment.md).
 
 Prototype, unaudited. Do not deploy with real value before independent review of the account,
-relayer, custodial key handling, STRK20 integration, and transport adapter.
+relayer, derivation contract, STRK20 integration, paymaster boundary, and transport adapter.

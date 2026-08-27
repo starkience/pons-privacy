@@ -9,9 +9,20 @@ const apiKey = process.env.LAYERSWAP_API_KEY;
 if (!apiKey) throw new Error("LAYERSWAP_API_KEY is required");
 
 const layerswap = new LayerswapClient({ apiKey });
-const destinationAddress = process.env.STRK20_ACCOUNT_ADDRESS;
+const paymasterApiKey = process.env.AVNU_PAYMASTER_API_KEY;
 startDepositServer(layerswap, port, {
   host: process.env.DEPOSIT_API_HOST ?? "127.0.0.1",
   swapCreationEnabled: process.env.LAYERSWAP_SWAP_CREATION_ENABLED === "true",
-  ...(destinationAddress ? { destinationAddress } : {}),
+  fundingSwapCreationEnabled:
+    process.env.LAYERSWAP_OUTBOUND_SWAP_CREATION_ENABLED === "true",
+  ...(paymasterApiKey
+    ? {
+        paymaster: {
+          apiKey: paymasterApiKey,
+          endpoint:
+            process.env.AVNU_PAYMASTER_URL ??
+            "https://starknet.paymaster.avnu.fi",
+        },
+      }
+    : {}),
 });

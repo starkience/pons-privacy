@@ -8,24 +8,37 @@ import type {
   CreateLayerswapReturnSwap,
   LayerswapClient,
   LayerswapDepositAction,
+  LayerswapFundingSwap,
+  LayerswapPreparedFundingSwap,
   LayerswapPreparedSwap,
   LayerswapQuote,
   LayerswapSwap,
 } from "@pons-privacy/sdk";
 import { isAddress, type Address } from "viem";
+import {
+  forwardAvnuPaymasterRequest,
+  type AvnuPaymasterProxyOptions,
+} from "./paymaster-proxy.js";
 
-const MAX_BODY_BYTES = 16 * 1024;
+const MAX_BODY_BYTES = 64 * 1024;
 const BASE_UNIT_PATTERN = /^[1-9][0-9]*$/;
 
 export type LayerswapDepositGateway = Pick<
   LayerswapClient,
-  "quote" | "limits" | "createReturnSwap" | "getSwap" | "getDepositActions"
+  | "quote"
+  | "limits"
+  | "createReturnSwap"
+  | "createFundingSwap"
+  | "getSwap"
+  | "getFundingSwap"
+  | "getDepositActions"
 >;
 
 export interface DepositServerOptions {
   readonly host?: string;
   readonly swapCreationEnabled: boolean;
-  readonly destinationAddress?: string;
+  readonly fundingSwapCreationEnabled: boolean;
+  readonly paymaster?: AvnuPaymasterProxyOptions;
 }
 
 export function startDepositServer(
@@ -43,9 +56,21 @@ export function startDepositServer(
           provider: "layerswap",
           network: "mainnet",
           swapCreationEnabled: options.swapCreationEnabled,
-          destinationConfigured: Boolean(options.destinationAddress),
+          fundingSwapCreationEnabled: options.fundingSwapCreationEnabled,
+          perUserStarknetAccounts: true,
+          paymasterProxyEnabled: Boolean(options.paymaster),
           actionSigningEnabled: false,
         });
+      }
+      if (request.method === "POST" && url.pathname === "/v1/paymaster") {
+        if (!options.paymaster) {
+          throw new HttpError(503, "AVNU paymaster proxy is not configured");
+        }
+        const proxied = await forwardAvnuPaymasterRequest(
+          await readJson(request),
+          options.paymaster,
+        );
+        return json(response, proxied.status, proxied.body);
       }
       if (request.method === "GET" && url.pathname === "/v1/deposits/limits") {
         return json(response, 200, await layerswap.limits("return-to-strk20"));
@@ -58,29 +83,73 @@ export function startDepositServer(
           await layerswap.quote("return-to-strk20", amount),
         );
       }
+      if (request.method === "GET" && url.pathname === "/v1/funding/limits") {
+        return json(response, 200, await layerswap.limits("fund-robinhood"));
+      }
+      if (request.method === "GET" && url.pathname === "/v1/funding/quote") {
+        const amount = amountFromQuery(url);
+        return json(
+          response,
+          200,
+          await layerswap.quote("fund-robinhood", amount),
+        );
+      }
       if (request.method === "POST" && url.pathname === "/v1/deposits/swaps") {
         if (!options.swapCreationEnabled) {
           throw new HttpError(503, "mainnet LayerSwap creation is disabled");
         }
-        if (!options.destinationAddress) {
-          throw new HttpError(
-            503,
-            "STRK20 destination account is not configured",
-          );
-        }
         const body = record(await readJson(request), "request");
         const amountIn = baseUnits(body.amount, "amount");
         const sourceAddress = evmAddress(body.sourceAddress, "sourceAddress");
+        const destinationAddress = starknetAddress(
+          body.destinationAddress,
+          "destinationAddress",
+        );
         const createRequest: CreateLayerswapReturnSwap = {
           amountIn,
           sourceAddress,
-          destinationAddress: options.destinationAddress,
+          destinationAddress,
           refundAddress: sourceAddress,
           referenceId: randomUUID(),
           useGasless: false,
         };
         const prepared = await layerswap.createReturnSwap(createRequest);
         return json(response, 201, prepared);
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/funding/swaps") {
+        if (!options.fundingSwapCreationEnabled) {
+          throw new HttpError(503, "mainnet LayerSwap funding is disabled");
+        }
+        const body = record(await readJson(request), "request");
+        const amountIn = baseUnits(body.amount, "amount");
+        const sourceAddress = starknetAddress(
+          body.sourceAddress,
+          "sourceAddress",
+        );
+        const destinationAddress = evmAddress(
+          body.destinationAddress,
+          "destinationAddress",
+        );
+        const prepared = await layerswap.createFundingSwap({
+          amountIn,
+          sourceAddress,
+          destinationAddress,
+          referenceId: randomUUID(),
+        });
+        return json(response, 201, prepared);
+      }
+
+      const fundingMatch = /^\/v1\/funding\/swaps\/([^/]+)$/.exec(url.pathname);
+      if (request.method === "GET" && fundingMatch) {
+        const swapId = decodeURIComponent(fundingMatch[1]!);
+        const sourceAddress = starknetAddress(
+          url.searchParams.get("sourceAddress"),
+          "sourceAddress",
+        );
+        const swap = await layerswap.getFundingSwap(swapId);
+        assertFundingSwapOwner(swap, sourceAddress);
+        return json(response, 200, swap);
       }
 
       const match = /^\/v1\/deposits\/swaps\/([^/]+)(\/deposit-actions)?$/.exec(
@@ -124,11 +193,31 @@ function assertSwapOwner(swap: LayerswapSwap, sourceAddress: Address): void {
   }
 }
 
+function assertFundingSwapOwner(
+  swap: LayerswapFundingSwap,
+  sourceAddress: string,
+): void {
+  if (BigInt(swap.sourceAddress) !== BigInt(sourceAddress)) {
+    throw new HttpError(404, "swap not found");
+  }
+}
+
 function evmAddress(value: unknown, field: string): Address {
   if (typeof value !== "string" || !isAddress(value) || BigInt(value) === 0n) {
     throw new HttpError(400, `${field} must be a non-zero EVM address`);
   }
   return value as Address;
+}
+
+function starknetAddress(value: unknown, field: string): string {
+  if (typeof value !== "string" || !/^0x[0-9a-fA-F]{1,64}$/.test(value)) {
+    throw new HttpError(400, `${field} must be a non-zero Starknet address`);
+  }
+  const parsed = BigInt(value);
+  if (parsed === 0n || parsed >= 2n ** 251n) {
+    throw new HttpError(400, `${field} must be a non-zero Starknet address`);
+  }
+  return `0x${parsed.toString(16)}`;
 }
 
 function baseUnits(value: unknown, field: string): bigint {
@@ -163,17 +252,7 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
   }
 }
 
-function json(
-  response: ServerResponse,
-  status: number,
-  body:
-    | Record<string, unknown>
-    | LayerswapQuote
-    | LayerswapPreparedSwap
-    | LayerswapSwap
-    | readonly LayerswapDepositAction[]
-    | object,
-): void {
+function json(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, {
     "content-type": "application/json",
     "cache-control": "no-store",

@@ -24,6 +24,7 @@ createRoot(document.getElementById("root")!).render(
       depositApi={depositApi}
       apiMode={apiMode}
       launchEnabled={import.meta.env.VITE_MAINNET_LAUNCH_ENABLED === "true"}
+      ozAccountClassHash={import.meta.env.VITE_OZ_ACCOUNT_CLASS_HASH_MAINNET}
     />
   </StrictMode>,
 );

@@ -1,7 +1,7 @@
 {
   "name": "@pons-privacy/strk20",
   "version": "0.1.0",
-  "description": "Project-held STRK20 mainnet custody and withdrawal service for Pons Privacy.",
+  "description": "User-controlled STRK20 proving and paymaster submission for Pons Privacy.",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
@@ -25,6 +25,7 @@
     "format:check": "prettier --check 'src/**/*.{ts,md}' README.md"
   },
   "dependencies": {
+    "@pons-privacy/sdk": "workspace:*",
     "@starkware-libs/starknet-privacy-sdk": "0.14.3-rc.4",
     "starknet": "10.0.2"
   },

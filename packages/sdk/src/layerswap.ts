@@ -114,6 +114,42 @@ export interface LayerswapPreparedSwap {
   readonly depositActions: readonly LayerswapDepositAction[];
 }
 
+export interface LayerswapStarknetCall {
+  readonly contractAddress: string;
+  readonly entrypoint: "transfer";
+  readonly calldata: readonly [string, string, string];
+}
+
+export interface LayerswapFundingAction {
+  readonly type: "transfer" | "manual_transfer";
+  readonly order: number;
+  readonly network: "STARKNET_MAINNET";
+  readonly token: "USDC";
+  readonly tokenAddress: string;
+  readonly amount: bigint;
+  readonly recipient: string;
+  readonly call: LayerswapStarknetCall;
+}
+
+export interface LayerswapFundingSwap {
+  readonly id: string;
+  readonly createdAt: string;
+  readonly referenceId?: string;
+  readonly status: LayerswapSwapStatus;
+  readonly failReason?: string;
+  readonly sourceAddress: string;
+  readonly destinationAddress: Address;
+  readonly amountIn: bigint;
+  readonly useDepositAddress: false;
+  readonly transactions: readonly LayerswapTransaction[];
+}
+
+export interface LayerswapPreparedFundingSwap {
+  readonly quote: LayerswapQuote;
+  readonly swap: LayerswapFundingSwap;
+  readonly depositAction: LayerswapFundingAction;
+}
+
 export interface CreateLayerswapReturnSwap {
   readonly amountIn: bigint;
   readonly sourceAddress: Address;
@@ -122,6 +158,15 @@ export interface CreateLayerswapReturnSwap {
   readonly referenceId: string;
   /** Gasless signing remains disabled until its returned typed data is route-tested. */
   readonly useGasless?: false;
+}
+
+export interface CreateLayerswapFundingSwap {
+  readonly amountIn: bigint;
+  /** Fresh per-operation Starknet account. Never the root-linked STRK20 account. */
+  readonly sourceAddress: string;
+  /** Fresh Robinhood execution account controlled by the same root signature. */
+  readonly destinationAddress: Address;
+  readonly referenceId: string;
 }
 
 export class LayerswapQuoteClient {
@@ -224,6 +269,70 @@ export class LayerswapQuoteClient {
 }
 
 export class LayerswapClient extends LayerswapQuoteClient {
+  async createFundingSwap(
+    request: CreateLayerswapFundingSwap,
+  ): Promise<LayerswapPreparedFundingSwap> {
+    this.requireApiKey();
+    if (request.amountIn <= 0n) {
+      throw new Error("LayerSwap swap amount must be positive");
+    }
+    const sourceAddress = starknetAddress(
+      request.sourceAddress,
+      "sourceAddress",
+    );
+    const destinationAddress = evmAddress(
+      request.destinationAddress,
+      "destinationAddress",
+    );
+    const referenceId = reference(request.referenceId);
+    const headers = this.authenticatedHeaders();
+    headers.set("content-type", "application/json");
+    headers.set("X-LS-CORRELATION-ID", referenceId);
+    const payload = await this.request("/swaps", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        source_network: "STARKNET_MAINNET",
+        source_token: "USDC",
+        destination_network: "ROBINHOOD_MAINNET",
+        destination_token: "USDG",
+        amount: formatUnits(request.amountIn, 6),
+        source_address: sourceAddress,
+        destination_address: destinationAddress,
+        refund_address: sourceAddress,
+        reference_id: referenceId,
+        refuel: false,
+        use_deposit_address: false,
+        use_depository: false,
+        use_gasless: false,
+        force_user_execution: false,
+      }),
+    });
+    const data = record(payload.data, "data");
+    const swap = parseFundingSwap(record(data.swap, "data.swap"));
+    assertFundingSwap(swap, {
+      amountIn: request.amountIn,
+      sourceAddress,
+      destinationAddress,
+      referenceId,
+    });
+    const depositAction = parseFundingAction(
+      data.deposit_actions,
+      request.amountIn,
+    );
+    return {
+      quote: parseQuote(
+        record(data.quote, "data.quote"),
+        "fund-robinhood",
+        request.amountIn,
+        this.now(),
+        this.quoteTtlMs,
+      ),
+      swap,
+      depositAction,
+    };
+  }
+
   async createReturnSwap(
     request: CreateLayerswapReturnSwap,
   ): Promise<LayerswapPreparedSwap> {
@@ -295,6 +404,17 @@ export class LayerswapClient extends LayerswapQuoteClient {
       headers: this.authenticatedHeaders(),
     });
     return parseSwap(record(record(payload.data, "data").swap, "data.swap"));
+  }
+
+  async getFundingSwap(swapId: string): Promise<LayerswapFundingSwap> {
+    const id = swapIdentifier(swapId);
+    const payload = await this.request(`/swaps/${encodeURIComponent(id)}`, {
+      method: "GET",
+      headers: this.authenticatedHeaders(),
+    });
+    return parseFundingSwap(
+      record(record(payload.data, "data").swap, "data.swap"),
+    );
   }
 
   async getDepositActions(
@@ -437,6 +557,67 @@ function parseSwap(value: Record<string, unknown>): LayerswapSwap {
   };
 }
 
+function parseFundingSwap(
+  value: Record<string, unknown>,
+): LayerswapFundingSwap {
+  assertNamed(
+    record(value.source_network, "source_network"),
+    "STARKNET_MAINNET",
+  );
+  assertToken(
+    record(value.source_token, "source_token"),
+    "USDC",
+    LAYERSWAP_STARKNET_USDC_ADDRESS,
+  );
+  assertNamed(
+    record(value.destination_network, "destination_network"),
+    "ROBINHOOD_MAINNET",
+  );
+  assertToken(
+    record(value.destination_token, "destination_token"),
+    "USDG",
+    LAYERSWAP_ROBINHOOD_USDG_ADDRESS,
+  );
+  const metadata = record(value.metadata, "metadata");
+  const sourceAddress = starknetAddress(
+    string(value.source_address, "source_address"),
+    "source_address",
+  );
+  const destinationAddress = evmAddress(
+    string(value.destination_address, "destination_address"),
+    "destination_address",
+  );
+  const status = enumValue(
+    value.status,
+    "status",
+    SWAP_STATUSES,
+  ) as LayerswapSwapStatus;
+  const failReason = nullableString(value.fail_reason, "fail_reason");
+  const referenceId = nullableString(
+    metadata.reference_id,
+    "metadata.reference_id",
+  );
+  const createdAt = string(value.created_date, "created_date");
+  if (Number.isNaN(Date.parse(createdAt))) {
+    throw new Error("created_date must be an ISO date");
+  }
+  if (value.use_deposit_address !== false) {
+    throw new Error("funding swap must not use a managed deposit address");
+  }
+  return {
+    id: swapIdentifier(string(value.id, "id")),
+    createdAt,
+    ...(referenceId ? { referenceId } : {}),
+    status,
+    ...(failReason ? { failReason } : {}),
+    sourceAddress,
+    destinationAddress,
+    amountIn: units(value.requested_amount, "requested_amount"),
+    useDepositAddress: false,
+    transactions: parseTransactions(value.transactions),
+  };
+}
+
 function parseTransactions(value: unknown): LayerswapTransaction[] {
   return recordArray(value, "transactions").map((entry, index) => {
     const type = enumValue(
@@ -543,6 +724,148 @@ function parseDepositActions(
   return actions.sort((left, right) => left.order - right.order);
 }
 
+export function parseLayerswapFundingAction(
+  value: unknown,
+  expectedAmount: bigint,
+): LayerswapFundingAction {
+  return parseFundingAction(value, expectedAmount);
+}
+
+function parseFundingAction(
+  value: unknown,
+  expectedAmount: bigint,
+): LayerswapFundingAction {
+  if (!Array.isArray(value) || value.length !== 1) {
+    throw new Error("funding deposit_actions must contain exactly one action");
+  }
+  const action = record(value[0], "deposit_actions[0]");
+  const type = enumValue(action.type, "deposit_actions[0].type", [
+    "transfer",
+    "manual_transfer",
+  ]) as "transfer" | "manual_transfer";
+  assertNamed(
+    record(action.network, "deposit_actions[0].network"),
+    "STARKNET_MAINNET",
+  );
+  assertToken(
+    record(action.token, "deposit_actions[0].token"),
+    "USDC",
+    LAYERSWAP_STARKNET_USDC_ADDRESS,
+  );
+  const amount = baseUnits(
+    action.amount_in_base_units,
+    "deposit_actions[0].amount_in_base_units",
+  );
+  if (amount !== expectedAmount) {
+    throw new Error("funding deposit action changed the deposit amount");
+  }
+  const order = integer(action.order, "deposit_actions[0].order");
+  if (order !== 0) {
+    throw new Error("funding deposit action order must be zero");
+  }
+  const callData = nullableString(
+    action.call_data,
+    "deposit_actions[0].call_data",
+  );
+  const call = callData
+    ? parseStarknetTransferCall(callData, amount)
+    : manualStarknetTransferCall(action.to_address, amount);
+  if (
+    action.to_address !== undefined &&
+    action.to_address !== null &&
+    BigInt(
+      starknetAddress(
+        string(action.to_address, "deposit_actions[0].to_address"),
+        "deposit_actions[0].to_address",
+      ),
+    ) !== BigInt(call.calldata[0])
+  ) {
+    throw new Error(
+      "funding action to_address does not match transfer recipient",
+    );
+  }
+  return {
+    type,
+    order,
+    network: "STARKNET_MAINNET",
+    token: "USDC",
+    tokenAddress: LAYERSWAP_STARKNET_USDC_ADDRESS,
+    amount,
+    recipient: call.calldata[0],
+    call,
+  };
+}
+
+function parseStarknetTransferCall(
+  raw: string,
+  expectedAmount: bigint,
+): LayerswapStarknetCall {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    throw new Error("funding call_data must be a Starknet call JSON array");
+  }
+  if (!Array.isArray(parsed) || parsed.length !== 1) {
+    throw new Error("funding call_data must contain exactly one Starknet call");
+  }
+  const value = record(parsed[0], "funding call_data[0]");
+  const contractAddress = starknetAddress(
+    string(
+      value.contractAddress ?? value.contract_address,
+      "funding call_data[0].contractAddress",
+    ),
+    "funding call_data[0].contractAddress",
+  );
+  if (BigInt(contractAddress) !== BigInt(LAYERSWAP_STARKNET_USDC_ADDRESS)) {
+    throw new Error("funding call_data may call only Starknet USDC");
+  }
+  if (value.entrypoint !== "transfer") {
+    throw new Error("funding call_data may call only USDC transfer");
+  }
+  if (!Array.isArray(value.calldata) || value.calldata.length !== 3) {
+    throw new Error(
+      "funding USDC transfer calldata must contain recipient and u256 amount",
+    );
+  }
+  const recipient = starknetAddress(
+    feltString(value.calldata[0], "funding transfer recipient"),
+    "funding transfer recipient",
+  );
+  const low = feltBigInt(value.calldata[1], "funding transfer amount low");
+  const high = feltBigInt(value.calldata[2], "funding transfer amount high");
+  if (low >= 1n << 128n || high >= 1n << 128n) {
+    throw new Error("funding transfer amount is not a Cairo u256");
+  }
+  if (low + (high << 128n) !== expectedAmount) {
+    throw new Error("funding call_data changed the deposit amount");
+  }
+  return {
+    contractAddress: LAYERSWAP_STARKNET_USDC_ADDRESS,
+    entrypoint: "transfer",
+    calldata: [recipient, low.toString(), high.toString()],
+  };
+}
+
+function manualStarknetTransferCall(
+  toAddress: unknown,
+  amount: bigint,
+): LayerswapStarknetCall {
+  const recipient = starknetAddress(
+    string(toAddress, "deposit_actions[0].to_address"),
+    "deposit_actions[0].to_address",
+  );
+  return {
+    contractAddress: LAYERSWAP_STARKNET_USDC_ADDRESS,
+    entrypoint: "transfer",
+    calldata: [
+      recipient,
+      (amount & ((1n << 128n) - 1n)).toString(),
+      (amount >> 128n).toString(),
+    ],
+  };
+}
+
 function assertReturnSwap(
   swap: LayerswapSwap,
   expected: {
@@ -569,6 +892,32 @@ function assertReturnSwap(
   }
   if (swap.useDepositAddress) {
     throw new Error("LayerSwap unexpectedly enabled a managed deposit address");
+  }
+}
+
+function assertFundingSwap(
+  swap: LayerswapFundingSwap,
+  expected: {
+    amountIn: bigint;
+    sourceAddress: string;
+    destinationAddress: Address;
+    referenceId: string;
+  },
+): void {
+  if (swap.amountIn !== expected.amountIn) {
+    throw new Error("LayerSwap created swap changed the requested amount");
+  }
+  if (BigInt(swap.sourceAddress) !== BigInt(expected.sourceAddress)) {
+    throw new Error("LayerSwap created swap changed the source address");
+  }
+  if (
+    swap.destinationAddress.toLowerCase() !==
+    expected.destinationAddress.toLowerCase()
+  ) {
+    throw new Error("LayerSwap created swap changed the destination address");
+  }
+  if (swap.referenceId !== expected.referenceId) {
+    throw new Error("LayerSwap created swap changed the reference ID");
   }
 }
 
@@ -645,6 +994,26 @@ function string(value: unknown, field: string): string {
     throw new Error(`${field} must be a non-empty string`);
   }
   return value;
+}
+
+function feltString(value: unknown, field: string): string {
+  if (typeof value !== "string" && typeof value !== "number") {
+    throw new Error(`${field} must be a felt`);
+  }
+  const result = String(value);
+  if (!/^(?:0x[0-9a-fA-F]+|0|[1-9][0-9]*)$/.test(result)) {
+    throw new Error(`${field} must be a felt`);
+  }
+  return result.startsWith("0x") ? result : `0x${BigInt(result).toString(16)}`;
+}
+
+function feltBigInt(value: unknown, field: string): bigint {
+  const raw = feltString(value, field);
+  const parsed = BigInt(raw);
+  if (parsed < 0n || parsed >= 2n ** 251n) {
+    throw new Error(`${field} is outside the felt range`);
+  }
+  return parsed;
 }
 
 function nullableString(value: unknown, field: string): string | undefined {

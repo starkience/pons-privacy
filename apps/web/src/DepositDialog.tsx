@@ -18,13 +18,21 @@ export function DepositDialog({
   api,
   account,
   walletName,
+  privacyAccount,
+  privacyConfigured,
+  derivingPrivacy,
   onConnect,
+  onCreatePrivacy,
   onClose,
 }: {
   api: DepositQuoteApi;
   account: string | undefined;
   walletName: string | undefined;
+  privacyAccount: string | undefined;
+  privacyConfigured: boolean;
+  derivingPrivacy: boolean;
   onConnect(): void;
+  onCreatePrivacy(): Promise<void>;
   onClose(): void;
 }) {
   const [amount, setAmount] = useState("10");
@@ -87,6 +95,17 @@ export function DepositDialog({
           </span>
           {account ? <CheckCircle size={18} weight="fill" /> : null}
         </div>
+
+        {privacyAccount ? (
+          <div className="deposit-wallet-row" data-connected>
+            <ShieldCheck size={18} weight="fill" />
+            <span>
+              <small>Your private Starknet account</small>
+              <strong>{shorten(privacyAccount)}</strong>
+            </span>
+            <CheckCircle size={18} weight="fill" />
+          </div>
+        ) : null}
 
         <form className="deposit-form" onSubmit={review}>
           <label htmlFor="deposit-amount">Amount to make private</label>
@@ -178,6 +197,31 @@ export function DepositDialog({
             >
               Connect wallet <Wallet size={17} weight="fill" />
             </button>
+          ) : quote && !privacyAccount ? (
+            privacyConfigured ? (
+              <button
+                className="primary-button deposit-primary"
+                type="button"
+                disabled={derivingPrivacy}
+                onClick={() => void onCreatePrivacy()}
+              >
+                {derivingPrivacy
+                  ? "Creating private account…"
+                  : "Create my private account"}
+                {!derivingPrivacy ? (
+                  <ShieldCheck size={17} weight="fill" />
+                ) : null}
+              </button>
+            ) : (
+              <div className="deposit-gate">
+                <LockKey size={17} weight="fill" />
+                <p>
+                  <strong>Privacy account setup required</strong>
+                  The OpenZeppelin Starknet account class hash is not
+                  configured.
+                </p>
+              </div>
+            )
           ) : quote ? (
             <div className="deposit-gate">
               <LockKey size={17} weight="fill" />
@@ -200,8 +244,9 @@ export function DepositDialog({
         </form>
 
         <p className="deposit-footnote">
-          Your deposit amount and timing are public at the edges. Movement
-          inside STRK20 is private.
+          One wallet signature derives keys locally. No Ready/Xverse wallet is
+          required, and the signature authorizes no transfer. Amount and timing
+          remain public at the edges.
         </p>
       </section>
     </div>

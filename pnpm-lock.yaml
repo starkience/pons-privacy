@@ -32,6 +32,9 @@ importers:
       react-dom:
         specifier: ^19.1.1
         version: 19.2.8(react@19.2.8)
+      viem:
+        specifier: ^2.38.3
+        version: 2.55.19(typescript@5.9.3)(zod@3.25.76)
     devDependencies:
       '@testing-library/jest-dom':
         specifier: ^6.8.0
@@ -82,6 +85,9 @@ importers:
 
   packages/sdk:
     dependencies:
+      starknet:
+        specifier: 10.0.2
+        version: 10.0.2(typescript@5.9.3)(zod@3.25.76)
       viem:
         specifier: ^2.38.3
         version: 2.55.19(typescript@5.9.3)(zod@3.25.76)
@@ -98,6 +104,9 @@ importers:
 
   packages/strk20:
     dependencies:
+      '@pons-privacy/sdk':
+        specifier: workspace:*
+        version: link:../sdk
       '@starkware-libs/starknet-privacy-sdk':
         specifier: 0.14.3-rc.4
         version: 0.14.3-rc.4(typescript@5.9.3)

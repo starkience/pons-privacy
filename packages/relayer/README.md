@@ -1,24 +1,22 @@
 # @pons-privacy/relayer
 
-Pons-only Robinhood relayer. Every call is decoded and checked against the current Pons factory,
-factory-recorded curve/token relationship, USDG, execution-account recipient, live economics,
-exact approvals, exact launch prefund, and bounded slippage before simulation and broadcast.
+Pons-only Robinhood relayer plus server boundaries for LayerSwap and AVNU. The Pons relayer decodes
+and constrains every call against live factory, curve, token, USDG, recipient, economics, approval,
+prefund, and slippage state before simulation and broadcast.
 
-`POST /v1/relay` requires `Authorization: Bearer <RELAYER_API_KEY>`. The server binds to
-`127.0.0.1` unless `HOST` is explicitly configured; expose it only behind the authenticated Pons
-backend or a TLS reverse proxy. `GET /healthz` does not require authentication.
+`POST /v1/relay` requires `Authorization: Bearer <RELAYER_API_KEY>`. Bind to loopback unless a TLS,
+authenticated application backend fronts it.
 
-`pnpm launch:mainnet` is the controlled backend launch client. It defaults to a dry run, requires
-an explicit 32-byte token salt, and only broadcasts when `BROADCAST=true`. Its owner key and relayer
-API key must come from a server secret store, never a browser bundle.
+## LayerSwap and paymaster API
 
-## LayerSwap deposit API
+`pnpm dev:deposit-api` starts the backend adapter on `127.0.0.1:8788`. It keeps both partner keys
+server-side and exposes:
 
-`pnpm dev:deposit-api` starts the backend-only LayerSwap V2 adapter on `127.0.0.1:8788`.
-It serves route limits and quotes without exposing `LAYERSWAP_API_KEY` to the browser. The service
-also implements pinned Robinhood USDG → Starknet USDC swap creation, status, and deposit-action
-endpoints. Creation returns HTTP 503 unless `LAYERSWAP_SWAP_CREATION_ENABLED=true` and the
-project-held `STRK20_ACCOUNT_ADDRESS` is configured.
+- inbound quotes and S1-targeted swap creation under `LAYERSWAP_SWAP_CREATION_ENABLED`;
+- outbound S2→fresh Robinhood R2 swap creation under
+  `LAYERSWAP_OUTBOUND_SWAP_CREATION_ENABLED`; and
+- the four allowlisted AVNU JSON-RPC methods at `POST /v1/paymaster` when configured.
 
-Deposit actions are parsed as untrusted provider data. Wallet execution remains disabled until a
-funded minimum-value route test proves the exact transfer calldata or EIP-712 typed-data allowlist.
+Both mainnet swap gates default to false. Outbound LayerSwap actions are accepted only when they
+contain one exact Starknet-mainnet USDC transfer for the requested amount. Request/response bodies
+at the paymaster boundary contain proofs and signatures and must never be logged.

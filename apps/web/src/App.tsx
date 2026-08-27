@@ -37,6 +37,7 @@ interface AppProps {
   depositApi: DepositQuoteApi;
   apiMode: "demo" | "live";
   launchEnabled: boolean;
+  ozAccountClassHash?: string | undefined;
 }
 
 type DraftErrors = Partial<
@@ -63,7 +64,13 @@ const emptyDraft: LaunchDraft = {
 
 const encoder = new TextEncoder();
 
-export function App({ api, depositApi, apiMode, launchEnabled }: AppProps) {
+export function App({
+  api,
+  depositApi,
+  apiMode,
+  launchEnabled,
+  ozAccountClassHash,
+}: AppProps) {
   const [draft, setDraft] = useState<LaunchDraft>(emptyDraft);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [preview, setPreview] = useState<LaunchPreview>();
@@ -637,7 +644,14 @@ export function App({ api, depositApi, apiMode, launchEnabled }: AppProps) {
           api={depositApi}
           account={wallet.account}
           walletName={wallet.walletName}
+          privacyAccount={wallet.privacyAccount}
+          privacyConfigured={Boolean(ozAccountClassHash)}
+          derivingPrivacy={wallet.derivingPrivacy}
           onConnect={requestWalletConnection}
+          onCreatePrivacy={async () => {
+            if (!ozAccountClassHash) return;
+            await wallet.derivePrivacyIdentity(ozAccountClassHash);
+          }}
           onClose={() => setDepositOpen(false)}
         />
       ) : null}

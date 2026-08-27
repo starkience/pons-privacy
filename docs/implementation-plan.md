@@ -1,45 +1,38 @@
 # Phased implementation plan
 
-## Phase 1 — Pons execution proof: complete
+## Complete in code
 
-- Robinhood configuration and versioned Pons manifest;
-- renamed execution account/factory with isolated EIP-712 and CREATE2 domains;
-- launch, curve buy, and curve sell adapter;
-- Pons-only semantic relayer;
-- malicious-input and quote tests; and
-- live-state Robinhood fork proof.
+- deployed Robinhood `PonsPrivacyAccountFactory` and fork-tested Pons launch/buy/sell path;
+- deterministic user-controlled S1, S2, viewing-key, and R2 derivation;
+- live LayerSwap quotes and strictly pinned bidirectional swap schemas;
+- STRK20 mature-note selection and hosted proving client;
+- private-paymaster proof submission with a hard S1 outbound prohibition;
+- S2 atomic deploy-and-transfer through standard SNIP-29;
+- server-only LayerSwap/AVNU credentials and independent mainnet kill switches; and
+- frontend wallet connection plus local privacy-account creation.
 
-## Phase 2 — transport proof
+## Phase 2 — funded transport proof
 
-LayerSwap is selected, its live bidirectional routes are pinned in the SDK, and partner-
-authenticated creation/status/deposit-action calls are implemented behind a disabled mainnet gate.
-Execute minimum-size bidirectional LayerSwap orders after the project-held Starknet destination is
-ready. Prove recipients, contract sources, transformations, expiry, retries, and refunds.
+Verify the mainnet OZ account class hash and AVNU pool support. Execute minimum-size inbound and
+outbound orders. Record exact calls, source/destination transactions, fees, expiry, refunds,
+under/overpayment, duplicates, arbitrary recipients, and restart recovery. Keep both swap gates
+false until reconciled evidence passes review.
 
-Exit gate: freeze validated deposit-action schemas from executed evidence.
+## Phase 3 — resumable private balance
 
-The project-held RC.4 SDK client and mainnet preflight are implemented, but they do not satisfy this
-gate: no provider route has yet been funded and reconciled.
+Implement the operation journal that binds quote, S1/S2/R2 indices, proof base, transaction hashes,
+LayerSwap status, independently observed balances, and recovery state. Wire shield, private balance,
+exit, and R2 funding into the frontend without persisting keys.
 
-## Phase 3 — private funding MVP
+## Phase 4 — launch, trade, sell, return
 
-Connect the project-held STRK20 withdrawal to the validated transport action, add authenticated
-per-user custodial accounting, deliver USDG to a fresh counterfactual account, and enable private
-launch/buy. Persist every state transition and separate proof construction, Starknet submission,
-provider delivery, and Pons execution.
+Enable the user-signed R2 launch path only after the funded privacy route. Add buy/sell and a fresh
+return account, with delivery and re-shielding as separate resumable steps.
 
-## Phase 4 — sell and return
+## Phase 5 — production hardening
 
-Create a return order from the execution account, deliver USDC to a fresh Starknet recovery account,
-then open a new STRK20 note in a separate resumable step.
+Independent audits, derivation compatibility fixtures, rate/spend limits, provider outage and
+refund runbooks, relayer redundancy, telemetry review, and graduated-market policy support.
 
-## Phase 5 — stronger helper integration
-
-Only if provider primitives support it, build and independently review a purpose-specific Cairo
-helper accepting exactly the validated USDC transport action. Do not create a generic arbitrary-call
-anonymizer and do not alter STRK20 cryptography.
-
-## Phase 6 — production hardening
-
-Audits, relayer redundancy, spend/prefund limits, versioned bytecode monitoring, provider outage and
-refund runbooks, privacy-copy review, telemetry audit, and phase-aware graduated-market support.
+A purpose-specific Cairo helper is optional future hardening, not required for the current S2
+design. Do not deploy a generic anonymizer.

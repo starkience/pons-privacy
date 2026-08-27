@@ -90,7 +90,7 @@ export function createDemoLaunchApi(): LaunchApi {
         creatorTaxMaximumBps: 1_000,
         economicsPinned: true,
         route: [
-          "Project-held private session",
+          "User-controlled private session",
           "Fresh Robinhood execution account",
           "Pons V2 launch",
         ],

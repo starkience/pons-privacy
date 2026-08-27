@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ROBINHOOD_MAINNET_CHAIN_ID, robinhood } from "@pons-privacy/sdk";
+import {
+  derivePonsPrivacyIdentity,
+  derivePonsPrivacyRoute,
+  PONS_PRIVACY_IDENTITY_MESSAGE,
+  ROBINHOOD_MAINNET_CHAIN_ID,
+  robinhood,
+  type DerivedPonsPrivacyIdentity,
+  type DerivedPonsPrivacyRoute,
+} from "@pons-privacy/sdk";
+import { recoverMessageAddress, stringToHex, type Hex } from "viem";
 
 export interface Eip1193Provider {
   request(args: {
@@ -34,8 +43,17 @@ export interface EvmWalletState {
   readonly account: string | undefined;
   readonly walletName: string | undefined;
   readonly connecting: boolean;
+  readonly derivingPrivacy: boolean;
+  readonly privacyAccount: string | undefined;
   readonly error: string | undefined;
   connect(walletId?: string): Promise<void>;
+  derivePrivacyIdentity(
+    ozAccountClassHash: string,
+  ): Promise<DerivedPonsPrivacyIdentity>;
+  derivePrivacyRoute(
+    accountIndex: number,
+    ozAccountClassHash: string,
+  ): Promise<DerivedPonsPrivacyRoute>;
   disconnect(): void;
   clearError(): void;
 }
@@ -47,8 +65,29 @@ export function useEvmWallet(): EvmWalletState {
   const [active, setActive] = useState<WalletOption>();
   const [account, setAccount] = useState<string>();
   const [connecting, setConnecting] = useState(false);
+  const [derivingPrivacy, setDerivingPrivacy] = useState(false);
+  const [privacyAccount, setPrivacyAccount] = useState<string>();
   const [error, setError] = useState<string>();
   const walletsRef = useRef<WalletOption[]>([]);
+  const identityRef = useRef<
+    | {
+        readonly rootAccount: string;
+        readonly signature: Hex;
+        readonly identity: DerivedPonsPrivacyIdentity;
+      }
+    | undefined
+  >(undefined);
+  const identityEpochRef = useRef(0);
+  const identityInFlightRef = useRef<
+    Promise<DerivedPonsPrivacyIdentity> | undefined
+  >(undefined);
+
+  const clearIdentity = useCallback(() => {
+    identityEpochRef.current += 1;
+    identityRef.current = undefined;
+    identityInFlightRef.current = undefined;
+    setPrivacyAccount(undefined);
+  }, []);
 
   const addWallet = useCallback((wallet: WalletOption) => {
     setWallets((current) => {
@@ -94,60 +133,157 @@ export function useEvmWallet(): EvmWalletState {
     const accountsChanged = (...args: unknown[]) => {
       const accounts = args[0];
       if (!Array.isArray(accounts) || typeof accounts[0] !== "string") {
+        clearIdentity();
         setAccount(undefined);
         setActive(undefined);
         return;
       }
+      if (accounts[0].toLowerCase() !== account?.toLowerCase()) clearIdentity();
       setAccount(accounts[0]);
     };
     active.provider.on("accountsChanged", accountsChanged);
     return () =>
       active.provider.removeListener?.("accountsChanged", accountsChanged);
-  }, [active]);
+  }, [account, active, clearIdentity]);
 
-  const connect = useCallback(async (walletId?: string) => {
-    const available = walletsRef.current;
-    const wallet = walletId
-      ? available.find((candidate) => candidate.id === walletId)
-      : available[0];
-    if (!wallet) {
-      setError(
-        "No EVM wallet found. Install MetaMask, Phantom, or Robinhood Wallet.",
-      );
-      return;
-    }
-    setConnecting(true);
-    setError(undefined);
-    try {
-      const accounts = await wallet.provider.request({
-        method: "eth_requestAccounts",
-      });
-      if (!Array.isArray(accounts) || typeof accounts[0] !== "string") {
-        throw new Error("The wallet did not return an account");
+  const connect = useCallback(
+    async (walletId?: string) => {
+      const available = walletsRef.current;
+      const wallet = walletId
+        ? available.find((candidate) => candidate.id === walletId)
+        : available[0];
+      if (!wallet) {
+        setError(
+          "No EVM wallet found. Install MetaMask, Phantom, or Robinhood Wallet.",
+        );
+        return;
       }
-      await ensureRobinhood(wallet.provider);
-      setActive(wallet);
-      setAccount(accounts[0]);
-    } catch (cause) {
-      setError(walletError(cause));
-    } finally {
-      setConnecting(false);
-    }
-  }, []);
+      setConnecting(true);
+      setError(undefined);
+      try {
+        const accounts = await wallet.provider.request({
+          method: "eth_requestAccounts",
+        });
+        if (!Array.isArray(accounts) || typeof accounts[0] !== "string") {
+          throw new Error("The wallet did not return an account");
+        }
+        await ensureRobinhood(wallet.provider);
+        if (accounts[0].toLowerCase() !== account?.toLowerCase())
+          clearIdentity();
+        setActive(wallet);
+        setAccount(accounts[0]);
+      } catch (cause) {
+        setError(walletError(cause));
+      } finally {
+        setConnecting(false);
+      }
+    },
+    [account, clearIdentity],
+  );
+
+  const derivePrivacyIdentity = useCallback(
+    async (ozAccountClassHash: string): Promise<DerivedPonsPrivacyIdentity> => {
+      if (!active || !account) {
+        throw new Error("Connect an EVM wallet before creating private keys");
+      }
+      const cached = identityRef.current;
+      if (cached?.rootAccount.toLowerCase() === account.toLowerCase()) {
+        return cached.identity;
+      }
+      if (identityInFlightRef.current) return identityInFlightRef.current;
+      const identityEpoch = identityEpochRef.current;
+      setDerivingPrivacy(true);
+      setError(undefined);
+      const pending = (async () => {
+        const signature = await active.provider.request({
+          method: "personal_sign",
+          params: [stringToHex(PONS_PRIVACY_IDENTITY_MESSAGE), account],
+        });
+        if (typeof signature !== "string") {
+          throw new Error("The wallet did not return a signature");
+        }
+        if (identityEpoch !== identityEpochRef.current) {
+          throw new Error("Wallet account changed while creating private keys");
+        }
+        const signer = await recoverMessageAddress({
+          message: { raw: stringToHex(PONS_PRIVACY_IDENTITY_MESSAGE) },
+          signature: signature as Hex,
+        });
+        if (signer.toLowerCase() !== account.toLowerCase()) {
+          throw new Error("The privacy-key signature did not match the wallet");
+        }
+        const identity = derivePonsPrivacyIdentity(
+          signature,
+          ozAccountClassHash,
+        );
+        if (identityEpoch !== identityEpochRef.current) {
+          throw new Error("Wallet account changed while creating private keys");
+        }
+        identityRef.current = {
+          rootAccount: account,
+          signature: signature as Hex,
+          identity,
+        };
+        setPrivacyAccount(identity.starknetAddress);
+        return identity;
+      })();
+      identityInFlightRef.current = pending;
+      try {
+        return await pending;
+      } catch (cause) {
+        const nextError = walletError(cause);
+        if (identityEpoch === identityEpochRef.current) setError(nextError);
+        throw new Error(nextError);
+      } finally {
+        if (identityInFlightRef.current === pending) {
+          identityInFlightRef.current = undefined;
+          setDerivingPrivacy(false);
+        }
+      }
+    },
+    [account, active],
+  );
+
+  const derivePrivacyRoute = useCallback(
+    async (
+      accountIndex: number,
+      ozAccountClassHash: string,
+    ): Promise<DerivedPonsPrivacyRoute> => {
+      await derivePrivacyIdentity(ozAccountClassHash);
+      const session = identityRef.current;
+      if (
+        !session ||
+        session.rootAccount.toLowerCase() !== account?.toLowerCase()
+      ) {
+        throw new Error("Privacy session changed before route derivation");
+      }
+      return derivePonsPrivacyRoute(
+        session.signature,
+        accountIndex,
+        ozAccountClassHash,
+      );
+    },
+    [account, derivePrivacyIdentity],
+  );
 
   const disconnect = useCallback(() => {
+    clearIdentity();
     setActive(undefined);
     setAccount(undefined);
     setError(undefined);
-  }, []);
+  }, [clearIdentity]);
 
   return {
     wallets,
     account,
     walletName: active?.name,
     connecting,
+    derivingPrivacy,
+    privacyAccount,
     error,
     connect,
+    derivePrivacyIdentity,
+    derivePrivacyRoute,
     disconnect,
     clearError: () => setError(undefined),
   };

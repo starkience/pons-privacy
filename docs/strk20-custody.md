@@ -1,50 +1,41 @@
-# Project-held STRK20 custody
+# User-controlled STRK20 keys
 
-## Runtime flow
+The filename is retained for stable links; the architecture is no longer custodial.
+
+## Derivation contract
+
+The connected Robinhood EVM wallet signs one fixed message that explicitly authorizes no transfer.
+Domain-separated hashes derive:
+
+- S1: the user's root-linked Starknet account and private/viewing keys;
+- S2(index): a fresh Starknet transport account for one public exit; and
+- R2(index): a fresh Robinhood execution owner for one Pons position.
+
+The signature and derived secrets live only in a browser-memory ref. They are cleared on account
+change/disconnect and are never sent to the application backend, stored in local/session storage,
+or placed in analytics. Changing the signed message or derivation labels would derive different
+accounts and can orphan funds; treat them as a permanent versioned protocol.
+
+## Outbound invariant
 
 ```text
-authenticated Pons intent
-  → authorize and reserve balance in the project ledger
-  → create and persist a validated transport order
-  → discover USDC notes at a pinned mature Starknet block
-  → construct the withdrawal and private change note
-  → request a proof from the pinned hosted prover
-  → submit through the project-held Starknet account
-  → reconcile the Starknet receipt and transport delivery
+S1 private notes
+  → persist LayerSwap order with source/refund S2 and destination R2
+  → hosted prover builds a withdrawal to S2
+  → AVNU private paymaster submits the pool proof (S1 is not the sender)
+  → S2 atomically deploys and transfers exact USDC to LayerSwap via SNIP-29
+  → LayerSwap sends USDG to fresh R2 and refunds only to S2
 ```
 
-The user never supplies a Starknet signer and never sees a Starknet confirmation. The backend owns
-both the account signer and viewing key. The configured hosted prover computes the proof; the
-backend constructs the request and submits the proved account transaction.
+The implementation rejects S2 equal to S1, stops on `USER_LINKAGE`, and has no direct S1 execution
+fallback. S2 and R2 are public at the exit edge; amount/timing and provider correlation remain.
 
-## Mainnet configuration
+## Required configuration and blockers
 
-Public protocol pins live in `deployments/strk20-mainnet.json`. The following values are secrets or
-route-specific deployment configuration and are intentionally absent:
+Public pool/service pins live in `deployments/strk20-mainnet.json`. The Starknet RPC provider key,
+LayerSwap key, and AVNU paymaster key stay server-side. The mainnet OpenZeppelin account class hash
+is required public configuration and must be verified as declared before any funded test.
 
-- `STARKNET_RPC_URL`: HTTPS mainnet RPC URL containing the provider credential;
-- `STRK20_ACCOUNT_ADDRESS`: deployed project-held Starknet account;
-- `STRK20_ACCOUNT_PRIVATE_KEY`: signer stored in a secret manager or isolated signing service;
-- `STRK20_VIEWING_KEY`: viewing key stored with signer-equivalent confidentiality; and
-- `STRK20_USDC_ADDRESS`: exact Starknet USDC accepted by the validated production route.
-
-Do not paste secrets into issue trackers, build logs, browser environment variables, or committed
-`.env` files. Rotate any provider or signing credential disclosed through an uncontrolled channel.
-
-## Release blockers
-
-The SDK client alone is not a deployable custodial product. Before real funds:
-
-1. deploy and fund a dedicated Starknet account with enough STRK for fees;
-2. implement an authenticated, idempotent withdrawal API and double-entry user ledger;
-3. persist an operation before proof construction and reconcile ambiguous submissions by hash/nonce;
-4. validate and persist the bridge deposit action before allowing the USDC withdrawal;
-5. use a durable queue plus distributed Starknet account-nonce lock, or run exactly one worker;
-6. enforce per-user, per-order, and global amount/rate limits;
-7. add signer isolation, rotation, backup, incident response, and access auditing; and
-8. independently audit the custody, bridge, account, and relayer paths.
-
-`Strk20Custodian` is intentionally an internal service primitive. It only spends the configured
-USDC token, selects notes mature at the proof base, returns surplus privately to the same Starknet
-account, and serializes submissions inside one process. It must not be exposed directly as a public
-HTTP endpoint.
+Before real value: perform a minimum-size round trip, test expiry/refunds/restarts, persist an
+idempotent operation journal, add rate limits, independently audit derivation and paymaster code,
+and review all logs for signature, key, viewing-key, witness, proof, and exact private-payload leaks.

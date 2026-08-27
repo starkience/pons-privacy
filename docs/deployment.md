@@ -1,102 +1,89 @@
 # Deployment
 
-## Networks
+## Current surfaces
 
-| Surface                      | Network                          | Status                               |
-| ---------------------------- | -------------------------------- | ------------------------------------ |
-| Pons V2                      | Robinhood mainnet, chain `4663`  | existing external deployment         |
-| USDG                         | Robinhood mainnet                | existing Pons-approved asset         |
-| Pons Privacy account factory | Robinhood mainnet                | deployed                             |
-| Pons relayer                 | offchain, Robinhood RPC          | not deployed                         |
-| Pons V2 test stack           | Robinhood testnet, chain `46630` | no public addresses published        |
-| STRK20 privacy pool          | Starknet mainnet                 | existing external RC.4 deployment    |
-| Project-held STRK20 service  | offchain, Starknet mainnet RPC   | implemented, not deployed            |
-| STRK20 transport helper      | Starknet                         | optional future hardening, no deploy |
+| Surface                     | Network                         | Status                                    |
+| --------------------------- | ------------------------------- | ----------------------------------------- |
+| Pons V2 and USDG            | Robinhood mainnet, chain `4663` | existing external deployments             |
+| `PonsPrivacyAccountFactory` | Robinhood mainnet               | deployed                                  |
+| Pons policy relayer         | offchain                        | not deployed                              |
+| Web/application backend     | offchain                        | local prototype                           |
+| STRK20 RC.4 pool            | Starknet mainnet                | existing external deployment              |
+| Hosted prover/discovery     | Starknet mainnet                | existing external services                |
+| User S1/S2 accounts         | Starknet mainnet                | counterfactual; deploy per user/operation |
+| Cairo transport helper      | Starknet                        | not required or deployed                  |
 
-Robinhood testnet is a distinct chain and is not Sepolia. Starknet Sepolia may be used later for
-STRK20-side helper testing, but it cannot prove a provider route that exists only on mainnet.
+Robinhood testnet is not Starknet Sepolia. The real LayerSwap route exists on mainnet, so Sepolia
+cannot prove the end-to-end transport.
 
-## Run the project-held STRK20 service
-
-`packages/strk20` pins the supplied RC.4 pool, prover, discovery service, and OHTTP key. Put the
-Starknet account address, signer, viewing key, HTTPS RPC URL, and validated Starknet USDC address in
-a secret manager. The Alchemy API key belongs inside `STARKNET_RPC_URL`; it must not be committed or
-served to the browser.
-
-Run `pnpm preflight:strk20` before enabling withdrawals. It verifies `SN_MAIN`, RPC spec/head, the
-pool class hash, provider health, discovery lag, and both OHTTP keys. Run one withdrawal worker until
-the operation journal and distributed nonce lock are implemented. See
-[STRK20 custody](strk20-custody.md).
-
-## Deploy the account factory
-
-Mainnet deployment:
+## Existing Robinhood deployment
 
 - factory: `0x2f04549436Aeb3693E849E6C8121CA901edF7Ce4`;
 - transaction: `0x3beb8f6b6c52c21f9a14cef64391b7f21e2c8eb1fcb55f5b1a39f9c02dee0282`;
 - block: `47293691`; and
 - runtime code hash: `0x7f8a4214e70963f328cad322e81053af12f8965cdbeeb73dee7971bca8a116ec`.
 
-The deployed runtime exactly matched the locally compiled Solidity `0.8.30` artifact. Full compiler
-and receipt metadata is recorded in `deployments/robinhood-mainnet.json`.
+Pons and USDG are used as deployed; this repository does not redeploy them. The account factory
+deploys fresh user-owned R2 account instances counterfactually on first execution.
 
-For a future deterministic redeployment, use a dedicated encrypted Foundry keystore and fund it
-with Robinhood ETH. Do not place a deployer key in an environment file.
+## Configuration
 
-```sh
-forge script evm/script/Deploy.s.sol:Deploy \
-  --root evm \
-  --rpc-url https://rpc.mainnet.chain.robinhood.com \
-  --account pons-privacy-deployer \
-  --broadcast
-```
+Server-only secrets:
 
-Before any future broadcast, repeat `pnpm test:fork` and obtain independent account/relayer review.
+- `LAYERSWAP_API_KEY`;
+- `AVNU_PAYMASTER_API_KEY`;
+- Starknet/RPC provider credential inside `STARKNET_RPC_URL`; and
+- policy-relayer key and credential when that service is deployed.
 
-## Run the relayer
+Required public configuration includes the verified mainnet OpenZeppelin account class hash in
+`OZ_ACCOUNT_CLASS_HASH_MAINNET` and `VITE_OZ_ACCOUNT_CLASS_HASH_MAINNET`. The hash must identify a
+declared mainnet class compatible with constructor calldata `[publicKey]`, salt `publicKey`, and
+Cairo version 1.
 
-Copy `.env.example` to an ignored `.env.local` and configure the deployed factory plus a dedicated
-funded relayer key and a random `RELAYER_API_KEY` of at least 32 bytes. The service exposes
-`GET /healthz` and authenticated `POST /v1/relay`. It binds to loopback by default; production
-hosting must place it behind the authenticated application backend or a TLS reverse proxy.
+Run the pinned STRK20 preflight before a funded test:
 
 ```sh
 pnpm build
-set -a
-. ./.env.local
-set +a
-pnpm --filter @pons-privacy/relayer start
+STARKNET_RPC_URL='https://...redacted...' pnpm preflight:strk20
 ```
 
-The relayer is deliberately Pons-only. It has no environment switch for unrestricted targets.
+It verifies SN_MAIN, RPC head/spec, pool class, prover/discovery health, lag, and OHTTP pins.
 
-## Controlled mainnet launch
-
-The backend launch client reads live Pons eligibility, fee, config, USDG approval, and economics;
-derives the counterfactual privacy account; prepares the owner-signed request; and defaults to a
-non-broadcasting dry run. Keep `LAUNCH_OWNER_PRIVATE_KEY` and `RELAYER_API_KEY` in the server secret
-store. This command is an operator diagnostic, not the user launch path, and must not be used to
-launch a token while the frontend-first release gate is active. A dry run can be inspected without
-broadcasting:
+## Local services
 
 ```sh
-pnpm --filter @pons-privacy/relayer build
-pnpm --filter @pons-privacy/relayer launch:mainnet
+pnpm dev:deposit-api
+pnpm dev:web
 ```
 
-The production path is the authenticated application API described in `apps/web/README.md`. Keep
-`BROADCAST` unset and `VITE_MAINNET_LAUNCH_ENABLED=false` until that API, its operation journal, and
-the full end-to-end release gate below are deployed and reviewed. The operator client can decode
-Pons's `TokenLaunched` event after a future, separately authorized broadcast.
+The LayerSwap server binds to loopback by default. Production must use TLS, authentication,
+rate-limits, and an operation journal. The AVNU proxy allowlists only the four paymaster methods and
+must never log request/response bodies.
 
-## End-to-end release gate
+## Kill switches
 
-1. authenticate the user and derive a fresh EVM execution owner without any Starknet wallet prompt;
-2. confirm the SDK and deployed factory predict the same account;
-3. deliver a small USDG amount through the validated transport path;
-4. relay launch with exact live fee/economics and verify Pons attribution;
-5. buy and sell while all assets remain at the execution account;
-6. return USDG as USDC to a fresh Starknet recovery account;
-7. open a new STRK20 note as a separate verified step; and
-8. reconcile the custodial user ledger; and
-9. audit logs/analytics for root identity, signature, key, witness, and exact private payload leaks.
+Keep these false until the funded round-trip gate passes:
+
+```text
+LAYERSWAP_SWAP_CREATION_ENABLED=false
+LAYERSWAP_OUTBOUND_SWAP_CREATION_ENABLED=false
+VITE_MAINNET_LAUNCH_ENABLED=false
+BROADCAST=false
+```
+
+Frontend flags are presentation gates, not authorization boundaries; the backend flags and policy
+relayer remain authoritative.
+
+## Mainnet release gate
+
+1. freeze the EVM signature message/derivation fixture and verify the OZ class hash;
+2. prove browser/server logs never contain derived secrets or private payloads;
+3. execute and reconcile a minimum inbound R1→S1→STRK20 deposit;
+4. let notes mature/rest, then execute a private S1→S2 withdrawal via AVNU;
+5. execute the exact S2→LayerSwap→R2 funding action and refund test;
+6. verify factory/SDK predict the same R2, then launch/buy/sell on a controlled position;
+7. return and re-shield through fresh accounts; and
+8. complete independent audits and incident/refund runbooks.
+
+No real token should be launched from the terminal. The production launch is a user-reviewed,
+frontend-driven flow after the privacy route and application backend are deployed.
