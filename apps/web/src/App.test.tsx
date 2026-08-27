@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { App } from "./App.js";
 import type { DepositQuoteApi } from "./deposit-api.js";
 import type { LaunchApi, LaunchPreview } from "./launch-api.js";
+import type { TradeApi } from "./trade-api.js";
 
 const preview: LaunchPreview = {
   previewId: "preview-1",
@@ -52,6 +53,15 @@ function depositApi(): DepositQuoteApi {
   };
 }
 
+function tradeApi(): TradeApi {
+  return {
+    position: vi.fn(),
+    preview: vi.fn(),
+    submit: vi.fn(),
+    status: vi.fn(),
+  };
+}
+
 function fillRequiredFields() {
   fireEvent.change(screen.getByLabelText("Token name"), {
     target: { value: "Night Market" },
@@ -67,6 +77,7 @@ describe("Pons Privacy launch frontend", () => {
       <App
         api={api()}
         depositApi={depositApi()}
+        tradeApi={tradeApi()}
         apiMode="demo"
         launchEnabled={false}
       />,
@@ -86,6 +97,7 @@ describe("Pons Privacy launch frontend", () => {
       <App
         api={launchApi}
         depositApi={depositApi()}
+        tradeApi={tradeApi()}
         apiMode="demo"
         launchEnabled={false}
       />,
@@ -109,6 +121,7 @@ describe("Pons Privacy launch frontend", () => {
       <App
         api={launchApi}
         depositApi={depositApi()}
+        tradeApi={tradeApi()}
         apiMode="live"
         launchEnabled
       />,
@@ -125,6 +138,7 @@ describe("Pons Privacy launch frontend", () => {
       <App
         api={api()}
         depositApi={depositApi()}
+        tradeApi={tradeApi()}
         apiMode="demo"
         launchEnabled={false}
       />,
@@ -139,5 +153,30 @@ describe("Pons Privacy launch frontend", () => {
     expect(
       screen.getByRole("tab", { name: /fund launcher/i }),
     ).toBeInTheDocument();
+  });
+
+  it("opens private buying and selling without asking for a Starknet wallet", () => {
+    render(
+      <App
+        api={api()}
+        depositApi={depositApi()}
+        tradeApi={tradeApi()}
+        apiMode="demo"
+        launchEnabled={false}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /trade privately/i }));
+    expect(
+      screen.getByRole("dialog", {
+        name: /trade without exposing your root wallet/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: /buy privately/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: /sell privately/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/connect starknet/i)).not.toBeInTheDocument();
   });
 });

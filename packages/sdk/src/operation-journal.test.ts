@@ -8,7 +8,10 @@ const SIGNATURE = `0x${"11".repeat(65)}`;
 const OTHER_SIGNATURE = `0x${"22".repeat(65)}`;
 const S1 = "0x123";
 const S2 = "0x456";
+const S3 = "0x789";
 const R2 = "0x1111111111111111111111111111111111111111";
+const TOKEN = "0x2222222222222222222222222222222222222222";
+const CURVE = "0x3333333333333333333333333333333333333333";
 
 class MemoryStorage implements JournalStorage {
   readonly values = new Map<string, string>();
@@ -43,6 +46,10 @@ describe("encrypted privacy operation journal", () => {
       quoteExpiresAt: 30_000,
     });
     await journal.advance(created.id, "swap-created", { swapId: "swap-7" });
+    await journal.advance(created.id, "swap-created", {
+      transportRelayStartedAt: 120,
+      transportTxHash: "0xtransport",
+    });
 
     const persisted = [...storage.values.entries()].flat().join(" ");
     expect(persisted).not.toContain(S1);
@@ -53,7 +60,13 @@ describe("encrypted privacy operation journal", () => {
 
     const reopened = await PonsOperationJournal.open(SIGNATURE, { storage });
     await expect(reopened.list()).resolves.toMatchObject([
-      { id: created.id, state: "swap-created", swapId: "swap-7" },
+      {
+        id: created.id,
+        state: "swap-created",
+        swapId: "swap-7",
+        transportRelayStartedAt: 120,
+        transportTxHash: "0xtransport",
+      },
     ]);
   });
 
@@ -168,5 +181,51 @@ describe("encrypted privacy operation journal", () => {
     );
     const reopened = await PonsOperationJournal.open(SIGNATURE, { storage });
     expect((await reopened.list())[0]?.lastError).not.toContain(SIGNATURE);
+  });
+
+  it("encrypts and restores an isolated private sell return through S3", async () => {
+    const storage = new MemoryStorage();
+    const journal = await PonsOperationJournal.open(SIGNATURE, { storage });
+    const created = await journal.create({
+      direction: "sell",
+      accountIndex: 9,
+      amount: 42n,
+      rootStarknetAddress: S1,
+      returnStarknetAddress: S3,
+      robinhoodExecutionAddress: R2,
+      tokenAddress: TOKEN,
+      curveAddress: CURVE,
+      tokenSymbol: "PONS",
+      tokenDecimals: 18,
+      sourceOperationId: "buy-operation",
+    });
+    await journal.advance(created.id, "trade-previewed", {
+      tradePreviewId: "preview-9",
+      tradeAmountIn: "42",
+      tradeAmountOut: "30000000",
+      evmRelayStartedAt: 1234,
+    });
+    await journal.advance(created.id, "trade-submitted", {
+      tradeTxHash: "0xtrade",
+    });
+    await journal.advance(created.id, "sold-on-robinhood");
+    await journal.advance(created.id, "swap-created", { swapId: "return-9" });
+
+    const reopened = await PonsOperationJournal.open(SIGNATURE, { storage });
+    await expect(reopened.list()).resolves.toMatchObject([
+      {
+        direction: "sell",
+        state: "swap-created",
+        returnStarknetAddress: S3,
+        tokenAddress: TOKEN,
+        curveAddress: CURVE,
+        tradeTxHash: "0xtrade",
+        evmRelayStartedAt: 1234,
+      },
+    ]);
+    const persisted = [...storage.values.values()].join(" ");
+    expect(persisted).not.toContain(S3);
+    expect(persisted).not.toContain(TOKEN);
+    expect(persisted).not.toContain("0xtrade");
   });
 });

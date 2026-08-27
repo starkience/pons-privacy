@@ -6,6 +6,10 @@ import {
 import type { PonsLaunchApplication } from "./launch-application.js";
 import { LaunchApplicationError } from "./launch-application.js";
 import { parseRelayRequest } from "./schema.js";
+import {
+  PonsTradeApplication,
+  TradeApplicationError,
+} from "./trade-application.js";
 
 const MAX_BODY_BYTES = 128 * 1024;
 
@@ -13,6 +17,8 @@ export interface LaunchServerOptions {
   readonly host?: string;
   readonly allowedOrigin?: string;
   readonly submissionEnabled: boolean;
+  readonly tradeApplication?: PonsTradeApplication;
+  readonly tradeSubmissionEnabled?: boolean;
 }
 
 export function startLaunchServer(
@@ -29,6 +35,7 @@ export function startLaunchServer(
           chainId: 4663,
           policy: "user-signed-r2-launch",
           submissionEnabled: options.submissionEnabled,
+          tradeSubmissionEnabled: options.tradeSubmissionEnabled ?? false,
         });
       }
       if (request.method !== "POST") {
@@ -52,14 +59,46 @@ export function startLaunchServer(
         });
         return json(response, 202, result);
       }
+      if (request.url === "/v1/trades/position") {
+        const result = await requireTradeApplication(options).position(body);
+        return json(response, 200, result);
+      }
+      if (request.url === "/v1/trades/preview") {
+        const result = await requireTradeApplication(options).preview(body);
+        return json(response, 201, result);
+      }
+      if (request.url === "/v1/trades") {
+        const result = await requireTradeApplication(options).submit({
+          previewId: body.previewId,
+          idempotencyKey: body.idempotencyKey,
+          relayRequest: parseRelayRequest(body.relayRequest),
+        });
+        return json(response, 202, result);
+      }
+      if (request.url === "/v1/trades/status") {
+        const result = await requireTradeApplication(options).status(body);
+        return json(response, 200, result);
+      }
       return json(response, 404, { error: "not found" });
     } catch (error) {
       const status =
-        error instanceof LaunchApplicationError ? error.status : 400;
+        error instanceof LaunchApplicationError ||
+        error instanceof TradeApplicationError
+          ? error.status
+          : 400;
       const message = error instanceof Error ? error.message : "unknown error";
       return json(response, status, { error: message });
     }
   }).listen(port, host);
+}
+
+function requireTradeApplication(
+  options: LaunchServerOptions,
+): PonsTradeApplication {
+  if (!options.tradeApplication) {
+    throw new TradeApplicationError(503, "trade application is not configured");
+  }
+  return options.tradeApplication;
 }
 
 function assertBrowserBoundary(

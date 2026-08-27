@@ -13,12 +13,16 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import {
   executionTypedData,
+  LayerswapClient,
   ponsPrivacyAccountAbi,
   ponsPrivacyAccountFactoryAbi,
   type RelayExecutionRequest,
   type RelayerFee,
 } from "@pons-privacy/sdk";
-import { validatePonsV2Calls } from "./pons-v2-policy.js";
+import {
+  validateExecutionPolicy,
+  type LayerswapReturnPolicyGateway,
+} from "./execution-policy.js";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
@@ -35,6 +39,7 @@ export interface RelayerDependencies {
   publicClient: PublicClient;
   walletClient: WalletClient;
   relayerAccount: ReturnType<typeof privateKeyToAccount>;
+  layerswap?: LayerswapReturnPolicyGateway;
 }
 
 export function validateStaticPolicy(
@@ -107,7 +112,11 @@ export class PonsPrivacyRelayer {
     });
     if (!signatureValid) throw new Error("invalid owner signature");
 
-    await validatePonsV2Calls(request, publicClient);
+    await validateExecutionPolicy(
+      request,
+      publicClient,
+      this.dependencies.layerswap,
+    );
 
     const code = await publicClient.getBytecode({ address: request.account });
     const currentNonce = code
@@ -172,6 +181,9 @@ export function relayerFromEnv(env: NodeJS.ProcessEnv): PonsPrivacyRelayer {
     account: relayerAccount,
     transport,
   });
+  const layerswap = env.LAYERSWAP_API_KEY
+    ? new LayerswapClient({ apiKey: env.LAYERSWAP_API_KEY })
+    : undefined;
 
   return new PonsPrivacyRelayer(
     {
@@ -191,7 +203,12 @@ export function relayerFromEnv(env: NodeJS.ProcessEnv): PonsPrivacyRelayer {
         "MAX_PREFUND_WEI",
       ),
     },
-    { publicClient, walletClient, relayerAccount },
+    {
+      publicClient,
+      walletClient,
+      relayerAccount,
+      ...(layerswap ? { layerswap } : {}),
+    },
   );
 }
 

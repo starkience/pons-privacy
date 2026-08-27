@@ -7,17 +7,21 @@ import { createPublicClient, http } from "viem";
 import { PonsLaunchApplication } from "./launch-application.js";
 import { FileLaunchApplicationStore } from "./launch-application-store.js";
 import { startLaunchServer } from "./launch-server.js";
+import { PonsTradeApplication } from "./trade-application.js";
+import { FileTradeApplicationStore } from "./trade-application-store.js";
 
 const port = portNumber(process.env.APP_API_PORT ?? "8789", "APP_API_PORT");
 const submissionEnabled = process.env.LAUNCH_SUBMISSION_ENABLED === "true";
-const relay: RelayExecution = submissionEnabled
-  ? createHttpRelay({
-      endpoint: required(process.env.RELAY_ENDPOINT, "RELAY_ENDPOINT"),
-      apiKey: required(process.env.RELAYER_API_KEY, "RELAYER_API_KEY"),
-    })
-  : async () => {
-      throw new Error("mainnet launch submission is disabled");
-    };
+const tradeSubmissionEnabled = process.env.TRADE_SUBMISSION_ENABLED === "true";
+const relay: RelayExecution =
+  submissionEnabled || tradeSubmissionEnabled
+    ? createHttpRelay({
+        endpoint: required(process.env.RELAY_ENDPOINT, "RELAY_ENDPOINT"),
+        apiKey: required(process.env.RELAYER_API_KEY, "RELAYER_API_KEY"),
+      })
+    : async () => {
+        throw new Error("mainnet launch submission is disabled");
+      };
 const publicClient = createPublicClient({
   chain: robinhood,
   transport: http(
@@ -33,9 +37,19 @@ const application = new PonsLaunchApplication({
   store,
   submissionEnabled,
 });
+const tradeApplication = new PonsTradeApplication({
+  publicClient,
+  relay,
+  store: new FileTradeApplicationStore(
+    process.env.TRADE_OPERATION_STORE_PATH ?? ".data/trade-operations.json",
+  ),
+  submissionEnabled: tradeSubmissionEnabled,
+});
 startLaunchServer(application, port, {
   host: process.env.APP_API_HOST ?? "127.0.0.1",
   submissionEnabled,
+  tradeApplication,
+  tradeSubmissionEnabled,
   ...(process.env.APP_API_ALLOWED_ORIGIN
     ? { allowedOrigin: process.env.APP_API_ALLOWED_ORIGIN }
     : {}),

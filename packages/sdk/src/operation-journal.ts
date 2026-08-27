@@ -27,18 +27,57 @@ export type ExitOperationState =
   | "refunding"
   | "refunded";
 
-export type PrivacyOperationState = DepositOperationState | ExitOperationState;
+export type BuyOperationState =
+  | "draft"
+  | "quote-ready"
+  | "swap-created"
+  | "private-withdrawal-submitted"
+  | "transport-funded"
+  | "bridge-transfer-submitted"
+  | "ready-on-robinhood"
+  | "trade-previewed"
+  | "trade-submitted"
+  | "bought"
+  | "refunding"
+  | "refunded";
+
+export type SellOperationState =
+  | "draft"
+  | "trade-previewed"
+  | "trade-submitted"
+  | "sold-on-robinhood"
+  | "swap-created"
+  | "source-submitted"
+  | "bridged-to-starknet"
+  | "shielding"
+  | "private"
+  | "refunding"
+  | "refunded";
+
+export type PrivacyOperationState =
+  | DepositOperationState
+  | ExitOperationState
+  | BuyOperationState
+  | SellOperationState;
+
+export type PrivacyOperationDirection = "deposit" | "exit" | "buy" | "sell";
 
 export interface PrivacyOperation {
   readonly id: string;
-  readonly direction: "deposit" | "exit";
+  readonly direction: PrivacyOperationDirection;
   readonly state: PrivacyOperationState;
   readonly accountIndex: number;
-  /** Six-decimal stablecoin base units, encoded as an unsigned decimal string. */
+  /** Input token base units, encoded as an unsigned decimal string. */
   readonly amount: string;
   readonly rootStarknetAddress: string;
   readonly transportStarknetAddress?: string;
+  readonly returnStarknetAddress?: string;
   readonly robinhoodExecutionAddress?: string;
+  readonly tokenAddress?: string;
+  readonly curveAddress?: string;
+  readonly tokenSymbol?: string;
+  readonly tokenDecimals?: number;
+  readonly sourceOperationId?: string;
   readonly swapId?: string;
   readonly sourceTxHash?: string;
   /** Actual destination-chain amount, not the source amount requested. */
@@ -47,8 +86,15 @@ export interface PrivacyOperation {
   /** Set before the private relay request leaves the browser. */
   readonly privateRelayStartedAt?: number;
   readonly privateTxHash?: string;
+  /** Set before the sponsored S2 relay request leaves the browser. */
+  readonly transportRelayStartedAt?: number;
   readonly transportTxHash?: string;
   readonly destinationTxHash?: string;
+  readonly tradePreviewId?: string;
+  readonly tradeTxHash?: string;
+  readonly tradeAmountIn?: string;
+  readonly tradeAmountOut?: string;
+  readonly evmRelayStartedAt?: number;
   readonly quoteExpiresAt?: number;
   readonly lastError?: string;
   readonly createdAt: number;
@@ -56,12 +102,18 @@ export interface PrivacyOperation {
 }
 
 export interface NewPrivacyOperation {
-  readonly direction: "deposit" | "exit";
+  readonly direction: PrivacyOperationDirection;
   readonly accountIndex: number;
   readonly amount: bigint;
   readonly rootStarknetAddress: string;
   readonly transportStarknetAddress?: string;
+  readonly returnStarknetAddress?: string;
   readonly robinhoodExecutionAddress?: string;
+  readonly tokenAddress?: string;
+  readonly curveAddress?: string;
+  readonly tokenSymbol?: string;
+  readonly tokenDecimals?: number;
+  readonly sourceOperationId?: string;
   readonly quoteExpiresAt?: number;
 }
 
@@ -74,8 +126,14 @@ export type PrivacyOperationPatch = Partial<
     | "accountDeploymentTxHash"
     | "privateRelayStartedAt"
     | "privateTxHash"
+    | "transportRelayStartedAt"
     | "transportTxHash"
     | "destinationTxHash"
+    | "tradePreviewId"
+    | "tradeTxHash"
+    | "tradeAmountIn"
+    | "tradeAmountOut"
+    | "evmRelayStartedAt"
     | "quoteExpiresAt"
   >
 >;
@@ -129,6 +187,39 @@ const EXIT_TRANSITIONS: Record<
   "transport-funded": ["bridge-transfer-submitted", "refunding"],
   "bridge-transfer-submitted": ["ready-on-robinhood", "refunding"],
   "ready-on-robinhood": [],
+  refunding: ["refunded"],
+  refunded: [],
+};
+
+const BUY_TRANSITIONS: Record<BuyOperationState, readonly BuyOperationState[]> =
+  {
+    draft: ["quote-ready"],
+    "quote-ready": ["draft", "swap-created"],
+    "swap-created": ["private-withdrawal-submitted", "refunding"],
+    "private-withdrawal-submitted": ["transport-funded"],
+    "transport-funded": ["bridge-transfer-submitted", "refunding"],
+    "bridge-transfer-submitted": ["ready-on-robinhood", "refunding"],
+    "ready-on-robinhood": ["trade-previewed"],
+    "trade-previewed": ["ready-on-robinhood", "trade-submitted"],
+    "trade-submitted": ["bought"],
+    bought: [],
+    refunding: ["refunded"],
+    refunded: [],
+  };
+
+const SELL_TRANSITIONS: Record<
+  SellOperationState,
+  readonly SellOperationState[]
+> = {
+  draft: ["trade-previewed"],
+  "trade-previewed": ["draft", "trade-submitted"],
+  "trade-submitted": ["sold-on-robinhood"],
+  "sold-on-robinhood": ["swap-created"],
+  "swap-created": ["source-submitted", "refunding"],
+  "source-submitted": ["bridged-to-starknet", "refunding"],
+  "bridged-to-starknet": ["shielding"],
+  shielding: ["private"],
+  private: [],
   refunding: ["refunded"],
   refunded: [],
 };
@@ -208,12 +299,32 @@ export class PonsOperationJournal {
             ),
           }
         : {}),
+      ...(input.returnStarknetAddress
+        ? {
+            returnStarknetAddress: normalizeStarknetAddress(
+              input.returnStarknetAddress,
+            ),
+          }
+        : {}),
       ...(input.robinhoodExecutionAddress
         ? {
             robinhoodExecutionAddress: normalizeEvmAddress(
               input.robinhoodExecutionAddress,
             ),
           }
+        : {}),
+      ...(input.tokenAddress
+        ? { tokenAddress: normalizeEvmAddress(input.tokenAddress) }
+        : {}),
+      ...(input.curveAddress
+        ? { curveAddress: normalizeEvmAddress(input.curveAddress) }
+        : {}),
+      ...(input.tokenSymbol ? { tokenSymbol: input.tokenSymbol } : {}),
+      ...(input.tokenDecimals !== undefined
+        ? { tokenDecimals: input.tokenDecimals }
+        : {}),
+      ...(input.sourceOperationId
+        ? { sourceOperationId: input.sourceOperationId }
         : {}),
       ...(input.quoteExpiresAt !== undefined
         ? { quoteExpiresAt: input.quoteExpiresAt }
@@ -239,7 +350,11 @@ export class PonsOperationJournal {
       const allowed =
         current.direction === "deposit"
           ? DEPOSIT_TRANSITIONS[current.state as DepositOperationState]
-          : EXIT_TRANSITIONS[current.state as ExitOperationState];
+          : current.direction === "exit"
+            ? EXIT_TRANSITIONS[current.state as ExitOperationState]
+            : current.direction === "buy"
+              ? BUY_TRANSITIONS[current.state as BuyOperationState]
+              : SELL_TRANSITIONS[current.state as SellOperationState];
       if (!allowed?.includes(nextState as never)) {
         throw new Error(
           `invalid ${current.direction} transition: ${current.state} -> ${nextState}`,
@@ -395,9 +510,11 @@ function validateNewOperation(input: NewPrivacyOperation): void {
   }
   if (input.amount <= 0n) throw new Error("operation amount must be positive");
   normalizeStarknetAddress(input.rootStarknetAddress);
-  if (input.direction === "exit") {
+  if (input.direction === "exit" || input.direction === "buy") {
     if (!input.transportStarknetAddress || !input.robinhoodExecutionAddress) {
-      throw new Error("exit operations require fresh S2 and R2 addresses");
+      throw new Error(
+        `${input.direction} operations require fresh S2 and R2 addresses`,
+      );
     }
     if (
       BigInt(input.rootStarknetAddress) ===
@@ -408,10 +525,48 @@ function validateNewOperation(input: NewPrivacyOperation): void {
       );
     }
   }
+  if (
+    (input.direction === "buy" || input.direction === "sell") &&
+    (!input.tokenAddress || !input.curveAddress)
+  ) {
+    throw new Error(
+      `${input.direction} operations require a Pons token and curve`,
+    );
+  }
+  if (
+    input.direction === "sell" &&
+    (!input.robinhoodExecutionAddress || !input.returnStarknetAddress)
+  ) {
+    throw new Error("sell operations require the position R2 and a fresh S3");
+  }
   if (input.transportStarknetAddress)
     normalizeStarknetAddress(input.transportStarknetAddress);
+  if (input.returnStarknetAddress)
+    normalizeStarknetAddress(input.returnStarknetAddress);
   if (input.robinhoodExecutionAddress)
     normalizeEvmAddress(input.robinhoodExecutionAddress);
+  if (input.tokenAddress) normalizeEvmAddress(input.tokenAddress);
+  if (input.curveAddress) normalizeEvmAddress(input.curveAddress);
+  if (
+    input.tokenSymbol !== undefined &&
+    !/^[\x20-\x7E]{1,32}$/.test(input.tokenSymbol)
+  ) {
+    throw new Error("tokenSymbol must be 1-32 printable characters");
+  }
+  if (
+    input.tokenDecimals !== undefined &&
+    (!Number.isSafeInteger(input.tokenDecimals) ||
+      input.tokenDecimals < 0 ||
+      input.tokenDecimals > 255)
+  ) {
+    throw new Error("tokenDecimals must be a uint8");
+  }
+  if (
+    input.sourceOperationId !== undefined &&
+    !input.sourceOperationId.trim()
+  ) {
+    throw new Error("sourceOperationId must not be empty");
+  }
   if (input.quoteExpiresAt !== undefined)
     validateTimestamp(input.quoteExpiresAt, "quoteExpiresAt");
 }
@@ -424,6 +579,8 @@ function validatePatch(patch: PrivacyOperationPatch): void {
     "privateTxHash",
     "transportTxHash",
     "destinationTxHash",
+    "tradePreviewId",
+    "tradeTxHash",
   ] as const) {
     const value = patch[field];
     if (value !== undefined && (!value.trim() || value.length > 256)) {
@@ -437,8 +594,23 @@ function validatePatch(patch: PrivacyOperationPatch): void {
   ) {
     throw new Error("destinationAmount must be positive base units");
   }
+  for (const field of ["tradeAmountIn", "tradeAmountOut"] as const) {
+    const value = patch[field];
+    if (
+      value !== undefined &&
+      (!BASE_UNITS_PATTERN.test(value) || value === "0")
+    ) {
+      throw new Error(`${field} must be positive base units`);
+    }
+  }
   if (patch.privateRelayStartedAt !== undefined) {
     validateTimestamp(patch.privateRelayStartedAt, "privateRelayStartedAt");
+  }
+  if (patch.transportRelayStartedAt !== undefined) {
+    validateTimestamp(patch.transportRelayStartedAt, "transportRelayStartedAt");
+  }
+  if (patch.evmRelayStartedAt !== undefined) {
+    validateTimestamp(patch.evmRelayStartedAt, "evmRelayStartedAt");
   }
   if (patch.quoteExpiresAt !== undefined)
     validateTimestamp(patch.quoteExpiresAt, "quoteExpiresAt");
@@ -451,7 +623,7 @@ function validateDocument(value: JournalDocument): void {
     if (
       !operation ||
       typeof operation.id !== "string" ||
-      (operation.direction !== "deposit" && operation.direction !== "exit") ||
+      !["deposit", "exit", "buy", "sell"].includes(operation.direction) ||
       !BASE_UNITS_PATTERN.test(operation.amount) ||
       operation.amount === "0" ||
       !Number.isSafeInteger(operation.accountIndex) ||
@@ -462,7 +634,11 @@ function validateDocument(value: JournalDocument): void {
       operation.updatedAt < operation.createdAt ||
       (operation.direction === "deposit"
         ? !Object.hasOwn(DEPOSIT_TRANSITIONS, operation.state)
-        : !Object.hasOwn(EXIT_TRANSITIONS, operation.state))
+        : operation.direction === "exit"
+          ? !Object.hasOwn(EXIT_TRANSITIONS, operation.state)
+          : operation.direction === "buy"
+            ? !Object.hasOwn(BUY_TRANSITIONS, operation.state)
+            : !Object.hasOwn(SELL_TRANSITIONS, operation.state))
     ) {
       throw new Error();
     }
@@ -480,7 +656,63 @@ function validateDocument(value: JournalDocument): void {
         "privateRelayStartedAt",
       );
     }
-    if (operation.direction === "exit") {
+    if (operation.transportRelayStartedAt !== undefined) {
+      validateTimestamp(
+        operation.transportRelayStartedAt,
+        "transportRelayStartedAt",
+      );
+    }
+    if (operation.evmRelayStartedAt !== undefined) {
+      validateTimestamp(operation.evmRelayStartedAt, "evmRelayStartedAt");
+    }
+    for (const field of [
+      "swapId",
+      "sourceTxHash",
+      "accountDeploymentTxHash",
+      "privateTxHash",
+      "transportTxHash",
+      "destinationTxHash",
+      "tradePreviewId",
+      "tradeTxHash",
+    ] as const) {
+      const fieldValue = operation[field];
+      if (
+        fieldValue !== undefined &&
+        (!fieldValue.trim() || fieldValue.length > 256)
+      ) {
+        throw new Error();
+      }
+    }
+    for (const field of ["tradeAmountIn", "tradeAmountOut"] as const) {
+      const fieldValue = operation[field];
+      if (
+        fieldValue !== undefined &&
+        (!BASE_UNITS_PATTERN.test(fieldValue) || fieldValue === "0")
+      ) {
+        throw new Error();
+      }
+    }
+    if (
+      operation.tokenSymbol !== undefined &&
+      !/^[\x20-\x7E]{1,32}$/.test(operation.tokenSymbol)
+    ) {
+      throw new Error();
+    }
+    if (
+      operation.tokenDecimals !== undefined &&
+      (!Number.isSafeInteger(operation.tokenDecimals) ||
+        operation.tokenDecimals < 0 ||
+        operation.tokenDecimals > 255)
+    ) {
+      throw new Error();
+    }
+    if (
+      operation.sourceOperationId !== undefined &&
+      !operation.sourceOperationId.trim()
+    ) {
+      throw new Error();
+    }
+    if (operation.direction === "exit" || operation.direction === "buy") {
       if (
         !operation.transportStarknetAddress ||
         !operation.robinhoodExecutionAddress
@@ -489,6 +721,21 @@ function validateDocument(value: JournalDocument): void {
       }
       normalizeStarknetAddress(operation.transportStarknetAddress);
       normalizeEvmAddress(operation.robinhoodExecutionAddress);
+    }
+    if (operation.direction === "buy" || operation.direction === "sell") {
+      if (!operation.tokenAddress || !operation.curveAddress) throw new Error();
+      normalizeEvmAddress(operation.tokenAddress);
+      normalizeEvmAddress(operation.curveAddress);
+    }
+    if (operation.direction === "sell") {
+      if (
+        !operation.robinhoodExecutionAddress ||
+        !operation.returnStarknetAddress
+      ) {
+        throw new Error();
+      }
+      normalizeEvmAddress(operation.robinhoodExecutionAddress);
+      normalizeStarknetAddress(operation.returnStarknetAddress);
     }
   }
 }

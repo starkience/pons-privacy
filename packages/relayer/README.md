@@ -17,7 +17,8 @@ server-side and exposes:
   `LAYERSWAP_OUTBOUND_SWAP_CREATION_ENABLED`; and
 - the four allowlisted AVNU JSON-RPC methods at `POST /v1/paymaster` when configured; and
 - allowlisted read-only Starknet JSON-RPC at `POST /v1/starknet`. Transaction-submission methods are
-  rejected and the upstream provider credential stays server-side.
+  rejected and the upstream provider credential stays server-side; and
+- an idempotent `POST /v1/deposits/swaps/:id/relay` boundary for the exact O2-signed R2 USDG return.
 
 Both mainnet swap gates default to false. Outbound LayerSwap actions are accepted only when they
 contain one exact Starknet-mainnet USDC transfer for the requested amount. Request/response bodies
@@ -34,6 +35,13 @@ launch semantics, and forwards it to the authenticated loopback relayer. Durable
 `LAUNCH_OPERATION_STORE_PATH` prevents the same reviewed request from being relayed twice.
 
 `LAUNCH_SUBMISSION_ENABLED` defaults to false and is independent of the relayer broadcast gate.
+
+The same application service exposes `/v1/trades/position`, `/v1/trades/preview`, `/v1/trades`, and
+`/v1/trades/status`. It accepts only active Pons USDG curves at the factory-derived R2, caps reviewed
+slippage at 10%, requires an exact O2 signature and reviewed approval/trade calldata, revalidates
+the live Pons policy, and persists idempotent submissions. `TRADE_SUBMISSION_ENABLED` defaults to
+false and is independent from launch submission.
+
 The file stores support a single service instance. A multi-instance deployment must replace them
 with transactional shared storage and add user-session, rate/spend-limit, monitoring, and pending
 transaction reconciliation at the production edge.

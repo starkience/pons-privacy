@@ -60,8 +60,10 @@ describe("AVNU private paymaster client", () => {
   });
 
   it("submits the proof with a normalized Starknet call and no account sender", async () => {
+    let relayStarted = false;
     const fetchMock = vi.fn(
       async (_url: string | URL | Request, init?: RequestInit) => {
+        expect(relayStarted).toBe(true);
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
         expect(body).toMatchObject({
           method: "paymaster_executeTransaction",
@@ -85,6 +87,9 @@ describe("AVNU private paymaster client", () => {
       },
     );
     const gateway = new AvnuPrivatePaymasterGateway("/v1/paymaster", fetchMock);
+    const onRelayStart = vi.fn(() => {
+      relayStarted = true;
+    });
     await expect(
       gateway.executePoolAction({
         poolAddress: "0x123",
@@ -104,8 +109,10 @@ describe("AVNU private paymaster client", () => {
             },
           },
         },
+        onRelayStart,
       }),
     ).resolves.toEqual({ transactionHash: "0xfeed", trackingId: "track-1" });
+    expect(onRelayStart).toHaveBeenCalledOnce();
   });
 
   it("guards and signs the atomic approve plus private deposit shape", async () => {

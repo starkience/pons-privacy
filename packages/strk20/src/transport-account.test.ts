@@ -65,6 +65,7 @@ describe("fresh Starknet transport account", () => {
       transactionHash: "0xbeef",
       blockNumber: 321,
       deployedWithTransaction: true,
+      recovered: false,
     });
     expect(account.executePaymasterTransaction).toHaveBeenCalledWith(
       [action.call],
@@ -111,5 +112,34 @@ describe("fresh Starknet transport account", () => {
     expect(isContractNotFoundError({ code: 20 })).toBe(true);
     expect(isContractNotFoundError(new Error("contract not found"))).toBe(true);
     expect(isContractNotFoundError(new Error("timeout"))).toBe(false);
+  });
+
+  it("records the relay boundary before submitting and recovers by hash", async () => {
+    const { account, executor } = harness(false);
+    const onRelayStart = vi.fn();
+    const onTransactionHash = vi.fn();
+    await executor.executeFundingAction(action, {
+      onRelayStart,
+      onTransactionHash,
+    });
+    expect(onRelayStart).toHaveBeenCalledOnce();
+    expect(onTransactionHash).toHaveBeenCalledWith("0xbeef");
+
+    await expect(
+      executor.executeFundingAction(action, {
+        previousTransactionHash: "0xbeef",
+      }),
+    ).resolves.toMatchObject({ transactionHash: "0xbeef", recovered: true });
+    expect(account.executePaymasterTransaction).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed when the S2 relay response is ambiguous", async () => {
+    const { account, executor } = harness(true);
+    account.executePaymasterTransaction.mockRejectedValueOnce(
+      new Error("network response lost"),
+    );
+    await expect(
+      executor.executeFundingAction(action, { onRelayStart: vi.fn() }),
+    ).rejects.toThrow("outcome is unknown; do not resubmit");
   });
 });

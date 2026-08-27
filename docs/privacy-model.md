@@ -9,7 +9,7 @@ It does not mean anonymous or confidential execution.
 | Connected wallet R1 in Pons calldata                       | absent by construction               |
 | S1 private/viewing keys and root signature                 | user-controlled, browser memory only |
 | S1 deposit and S2 withdrawal amount/time                   | public Starknet edges                |
-| S2→R2 order mapping                                        | visible to LayerSwap                 |
+| S2→R2 and R2→S3 order mappings                             | visible to LayerSwap                 |
 | R2, Pons token, curve, calls, prices, balances, metadata   | public Robinhood state               |
 | Proof/discovery requests and network metadata              | visible to their service operators   |
 
@@ -18,11 +18,12 @@ correlate network metadata. STRK20 screening and selective disclosure remain pro
 
 ## Correlation controls
 
-- one S2 and R2 index per position or intentionally linkable activity cluster;
+- one S2, R2, and independent-viewing-key S3 index per position;
 - never let S1 initiate the public outbound bridge;
 - AVNU submission instead of root-wallet gas funding;
 - amount bucketing and time separation where product economics allow;
-- never transfer launch assets to R1; and
+- never transfer launch assets to R1;
+- never return sold proceeds to S1; and
 - never log the identity signature, derived keys, viewing key, witnesses, proofs, or exact private
   payloads.
 

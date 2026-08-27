@@ -24,6 +24,13 @@ export interface TransportExecutionResult {
   readonly transactionHash: string;
   readonly blockNumber: number;
   readonly deployedWithTransaction: boolean;
+  readonly recovered: boolean;
+}
+
+export interface TransportExecutionRecovery {
+  readonly previousTransactionHash?: string;
+  readonly onRelayStart?: () => void | Promise<void>;
+  readonly onTransactionHash?: (hash: string) => void | Promise<void>;
 }
 
 interface TransportProvider {
@@ -57,8 +64,27 @@ export class TransportAccountExecutor {
 
   async executeFundingAction(
     action: LayerswapFundingAction,
+    recovery: TransportExecutionRecovery = {},
   ): Promise<TransportExecutionResult> {
     const call = assertFundingCall(action);
+    if (recovery.previousTransactionHash) {
+      const prior = await this.provider.waitForTransaction(
+        recovery.previousTransactionHash,
+      );
+      if (prior.isSuccess()) {
+        if (prior.block_number === undefined) {
+          throw new Error(
+            "recovered Starknet transport receipt has no block number",
+          );
+        }
+        return {
+          transactionHash: recovery.previousTransactionHash,
+          blockNumber: prior.block_number,
+          deployedWithTransaction: false,
+          recovered: true,
+        };
+      }
+    }
     const deployed = await isDeployed(this.provider, this.account.address);
     const details: PaymasterDetails = {
       feeMode: { mode: "sponsored" },
@@ -74,10 +100,27 @@ export class TransportAccountExecutor {
           }
         : {}),
     };
-    const submitted = await this.account.executePaymasterTransaction(
-      [call],
-      details,
-    );
+    await recovery.onRelayStart?.();
+    let submitted: { readonly transaction_hash: string };
+    try {
+      submitted = await this.account.executePaymasterTransaction(
+        [call],
+        details,
+      );
+    } catch (error) {
+      throw new Error(
+        "Starknet transport relay outcome is unknown; do not resubmit until reconciled",
+        { cause: error },
+      );
+    }
+    try {
+      await recovery.onTransactionHash?.(submitted.transaction_hash);
+    } catch (error) {
+      throw new Error(
+        `Starknet transport was submitted as ${submitted.transaction_hash}; do not resubmit`,
+        { cause: error },
+      );
+    }
     const receipt = await this.provider.waitForTransaction(
       submitted.transaction_hash,
     );
@@ -93,6 +136,7 @@ export class TransportAccountExecutor {
       transactionHash: submitted.transaction_hash,
       blockNumber: receipt.block_number,
       deployedWithTransaction: !deployed,
+      recovered: false,
     };
   }
 }

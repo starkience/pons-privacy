@@ -10,4 +10,5 @@ export * from "./launch-request.js";
 export * from "./operation-journal.js";
 export * from "./relay-http.js";
 export * from "./transport.js";
+export * from "./trade-request.js";
 export * from "./types.js";

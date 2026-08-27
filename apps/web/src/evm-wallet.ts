@@ -7,12 +7,15 @@ import {
   PonsOperationJournal,
   PONS_PRIVACY_IDENTITY_MESSAGE,
   ponsPrivacyAccountFactoryAbi,
+  prepareLayerswapReturnRelayRequest,
   preparePonsLaunchRelayRequest,
+  preparePonsTradeRelayRequest,
   ROBINHOOD_MAINNET_CHAIN_ID,
   robinhood,
   type DerivedPonsPrivacyIdentity,
   type LayerswapDepositAction,
   type PonsV2LaunchIntent,
+  type PonsTradeIntent,
   type RelayExecutionRequest,
   type ResolvedPonsPrivacyRoute,
 } from "@pons-privacy/sdk";
@@ -80,6 +83,17 @@ export interface EvmWalletState {
     accountIndex: number,
     ozAccountClassHash: string,
     intent: PonsV2LaunchIntent,
+  ): Promise<RelayExecutionRequest>;
+  prepareTradeRequest(
+    accountIndex: number,
+    ozAccountClassHash: string,
+    intent: PonsTradeIntent,
+  ): Promise<RelayExecutionRequest>;
+  prepareReturnRequest(
+    accountIndex: number,
+    ozAccountClassHash: string,
+    swapId: string,
+    actions: readonly LayerswapDepositAction[],
   ): Promise<RelayExecutionRequest>;
   submitDepositActions(
     actions: readonly LayerswapDepositAction[],
@@ -367,6 +381,54 @@ export function useEvmWallet(): EvmWalletState {
     [active, derivePrivacyRoute],
   );
 
+  const prepareTradeRequest = useCallback(
+    async (
+      accountIndex: number,
+      ozAccountClassHash: string,
+      intent: PonsTradeIntent,
+    ): Promise<RelayExecutionRequest> => {
+      if (!active)
+        throw new Error("Connect the controller wallet before trading");
+      const route = await derivePrivacyRoute(accountIndex, ozAccountClassHash);
+      return preparePonsTradeRelayRequest({
+        route,
+        accountIndex,
+        intent,
+        publicClient: createPublicClient({
+          chain: robinhood,
+          transport: custom(active.provider),
+        }),
+      });
+    },
+    [active, derivePrivacyRoute],
+  );
+
+  const prepareReturnRequest = useCallback(
+    async (
+      accountIndex: number,
+      ozAccountClassHash: string,
+      swapId: string,
+      actions: readonly LayerswapDepositAction[],
+    ): Promise<RelayExecutionRequest> => {
+      if (!active)
+        throw new Error(
+          "Connect the controller wallet before returning proceeds",
+        );
+      const route = await derivePrivacyRoute(accountIndex, ozAccountClassHash);
+      return prepareLayerswapReturnRelayRequest({
+        route,
+        accountIndex,
+        swapId,
+        actions,
+        publicClient: createPublicClient({
+          chain: robinhood,
+          transport: custom(active.provider),
+        }),
+      });
+    },
+    [active, derivePrivacyRoute],
+  );
+
   const submitDepositActions = useCallback(
     async (
       actions: readonly LayerswapDepositAction[],
@@ -444,6 +506,8 @@ export function useEvmWallet(): EvmWalletState {
     derivePrivacyRoute,
     openOperationJournal,
     prepareLaunchRequest,
+    prepareTradeRequest,
+    prepareReturnRequest,
     submitDepositActions,
     disconnect,
     clearError: () => setError(undefined),

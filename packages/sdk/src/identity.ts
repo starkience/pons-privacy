@@ -12,6 +12,8 @@ export const PONS_PRIVACY_STARKNET_KEY_LABEL = "starknet-account:v1";
 export const PONS_PRIVACY_VIEWING_KEY_LABEL = "viewing-key:v1";
 export const PONS_PRIVACY_STARKNET_TRANSPORT_LABEL =
   "starknet-transport-account:v1";
+export const PONS_PRIVACY_STARKNET_RETURN_LABEL = "starknet-return-account:v1";
+export const PONS_PRIVACY_RETURN_VIEWING_KEY_LABEL = "return-viewing-key:v1";
 export const PONS_PRIVACY_EVM_ACCOUNT_LABEL = "pons-robinhood-eoa:v1";
 export const PONS_PRIVACY_APP_ID = "privatepons.app";
 
@@ -37,6 +39,8 @@ export interface DerivedRobinhoodExecutionAccount {
 export interface DerivedPonsPrivacyRoute {
   readonly rootIdentity: DerivedPonsPrivacyIdentity;
   readonly transportIdentity: DerivedPonsPrivacyIdentity;
+  /** Fresh sell-return account with a distinct public viewing key from S1. */
+  readonly returnIdentity: DerivedPonsPrivacyIdentity;
   readonly robinhoodExecution: DerivedRobinhoodExecutionAccount;
 }
 
@@ -102,6 +106,32 @@ export function deriveStarknetTransportAccount(
   );
 }
 
+/**
+ * Fresh, per-position Starknet account used only to receive sold USDG after
+ * LayerSwap converts it to USDC. Its viewing key is also scoped per position;
+ * reusing S1's public viewing key here would link the two registrations.
+ */
+export function deriveStarknetReturnAccount(
+  evmSignature: string,
+  accountIndex: number,
+  ozAccountClassHash: string,
+): DerivedPonsPrivacyIdentity {
+  assertEvmSignature(evmSignature);
+  if (!Number.isSafeInteger(accountIndex) || accountIndex < 0) {
+    throw new Error("accountIndex must be a non-negative safe integer");
+  }
+  const classHash = requireHexFelt(ozAccountClassHash, "ozAccountClassHash");
+  return deriveStarknetIdentity(
+    evmSignature,
+    classHash,
+    `${PONS_PRIVACY_STARKNET_RETURN_LABEL}:${accountIndex}`,
+    deriveViewingKey(
+      evmSignature,
+      `${PONS_PRIVACY_RETURN_VIEWING_KEY_LABEL}:${accountIndex}`,
+    ),
+  );
+}
+
 export function derivePonsPrivacyRoute(
   evmSignature: string,
   accountIndex: number,
@@ -110,6 +140,11 @@ export function derivePonsPrivacyRoute(
   return {
     rootIdentity: derivePonsPrivacyIdentity(evmSignature, ozAccountClassHash),
     transportIdentity: deriveStarknetTransportAccount(
+      evmSignature,
+      accountIndex,
+      ozAccountClassHash,
+    ),
+    returnIdentity: deriveStarknetReturnAccount(
       evmSignature,
       accountIndex,
       ozAccountClassHash,
@@ -170,8 +205,11 @@ export function deriveRobinhoodExecutionAccount(
   return { privateKey, address: privateKeyToAccount(privateKey).address };
 }
 
-function deriveViewingKey(evmSignature: string): bigint {
-  const base = `${evmSignature}:${PONS_PRIVACY_VIEWING_KEY_LABEL}`;
+function deriveViewingKey(
+  evmSignature: string,
+  label = PONS_PRIVACY_VIEWING_KEY_LABEL,
+): bigint {
+  const base = `${evmSignature}:${label}`;
   const lo = BigInt(hash.starknetKeccak(`${base}:0`));
   const hi = BigInt(hash.starknetKeccak(`${base}:1`));
   const order = ec.starkCurve.CURVE.n;

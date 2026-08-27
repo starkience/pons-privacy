@@ -36,15 +36,19 @@ import type {
   LaunchSubmission,
 } from "./launch-api.js";
 import { DepositDialog } from "./DepositDialog.js";
+import { TradeDialog } from "./TradeDialog.js";
 import type { DepositQuoteApi } from "./deposit-api.js";
 import { useEvmWallet } from "./evm-wallet.js";
 import type { PrivacyExecutionRunner } from "./privacy-execution.js";
+import type { TradeApi } from "./trade-api.js";
 
 interface AppProps {
   api: LaunchApi;
   depositApi: DepositQuoteApi;
+  tradeApi: TradeApi;
   apiMode: "demo" | "live";
   launchEnabled: boolean;
+  tradeEnabled?: boolean;
   mainnetPrivacyExecutionEnabled?: boolean;
   privacyExecutionRunner?: PrivacyExecutionRunner | undefined;
   ozAccountClassHash?: string | undefined;
@@ -78,8 +82,10 @@ const encoder = new TextEncoder();
 export function App({
   api,
   depositApi,
+  tradeApi,
   apiMode,
   launchEnabled,
+  tradeEnabled = false,
   mainnetPrivacyExecutionEnabled = false,
   privacyExecutionRunner,
   ozAccountClassHash,
@@ -93,6 +99,7 @@ export function App({
   const [error, setError] = useState<string>();
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [depositOpen, setDepositOpen] = useState(false);
+  const [tradeOpen, setTradeOpen] = useState(false);
   const [walletPickerOpen, setWalletPickerOpen] = useState(false);
   const [preparedLaunchAccount, setPreparedLaunchAccount] =
     useState<PreparedLaunchAccount>();
@@ -346,14 +353,24 @@ export function App({
             <span>USDG</span>
             <i /> <em>LayerSwap</em> <i /> <span>private USDC</span>
           </div>
-          <button
-            className="deposit-button"
-            type="button"
-            onClick={() => setDepositOpen(true)}
-          >
-            Deposit
-            <ArrowRight size={15} weight="bold" />
-          </button>
+          <div className="balance-actions">
+            <button
+              className="deposit-button trade-button"
+              type="button"
+              onClick={() => setTradeOpen(true)}
+            >
+              Trade privately
+              <ArrowRight size={15} weight="bold" />
+            </button>
+            <button
+              className="deposit-button"
+              type="button"
+              onClick={() => setDepositOpen(true)}
+            >
+              Deposit
+              <ArrowRight size={15} weight="bold" />
+            </button>
+          </div>
         </section>
 
         <div className="create-shell">
@@ -782,6 +799,84 @@ export function App({
             launchRequestRef.current = undefined;
           }}
           onClose={() => setDepositOpen(false)}
+        />
+      ) : null}
+
+      {tradeOpen ? (
+        <TradeDialog
+          api={tradeApi}
+          depositApi={depositApi}
+          account={wallet.account}
+          privacyConfigured={Boolean(ozAccountClassHash)}
+          mainnetExecutionEnabled={mainnetPrivacyExecutionEnabled}
+          tradeSubmissionEnabled={tradeEnabled}
+          onConnect={requestWalletConnection}
+          onPrepareRoute={async (accountIndex) => {
+            if (!ozAccountClassHash) {
+              throw new Error("The Starknet account class is not configured");
+            }
+            return wallet.derivePrivacyRoute(accountIndex, ozAccountClassHash);
+          }}
+          onOpenJournal={async () => {
+            if (!ozAccountClassHash) {
+              throw new Error("The Starknet account class is not configured");
+            }
+            return wallet.openOperationJournal(ozAccountClassHash);
+          }}
+          onQuotePrivateFee={async () => {
+            if (!privacyExecutionRunner) {
+              throw new Error("STRK20 private execution is not configured");
+            }
+            return privacyExecutionRunner.quotePrivateFee();
+          }}
+          onWithdrawToTransport={async (route, amount, recovery) => {
+            if (!privacyExecutionRunner) {
+              throw new Error("STRK20 private execution is not configured");
+            }
+            return privacyExecutionRunner.withdrawToTransport(
+              route,
+              amount,
+              recovery,
+            );
+          }}
+          onSubmitFundingAction={async (route, action, recovery) => {
+            if (!privacyExecutionRunner) {
+              throw new Error("Starknet transport execution is not configured");
+            }
+            return privacyExecutionRunner.submitFundingAction(
+              route,
+              action,
+              recovery,
+            );
+          }}
+          onPrepareTradeRequest={async (accountIndex, intent) => {
+            if (!ozAccountClassHash) {
+              throw new Error("The Starknet account class is not configured");
+            }
+            return wallet.prepareTradeRequest(
+              accountIndex,
+              ozAccountClassHash,
+              intent,
+            );
+          }}
+          onPrepareReturnRequest={async (accountIndex, swapId, actions) => {
+            if (!ozAccountClassHash) {
+              throw new Error("The Starknet account class is not configured");
+            }
+            return wallet.prepareReturnRequest(
+              accountIndex,
+              ozAccountClassHash,
+              swapId,
+              actions,
+            );
+          }}
+          onShieldReturn={async (route, request) => {
+            if (!privacyExecutionRunner) {
+              throw new Error("STRK20 private execution is not configured");
+            }
+            return privacyExecutionRunner.shieldReturn(route, request);
+          }}
+          onClose={() => setTradeOpen(false)}
         />
       ) : null}
 

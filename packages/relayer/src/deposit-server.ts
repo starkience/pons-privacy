@@ -11,9 +11,15 @@ import type {
   LayerswapPreparedFundingSwap,
   LayerswapPreparedSwap,
   LayerswapQuote,
+  RelayExecution,
   LayerswapSwap,
 } from "@pons-privacy/sdk";
-import { LayerswapRequestError } from "@pons-privacy/sdk";
+import { keccak256, stringToHex } from "viem";
+import { parseRelayRequest } from "./schema.js";
+import {
+  LayerswapRequestError,
+  relayExecutionRequestJson,
+} from "@pons-privacy/sdk";
 import { isAddress, type Address } from "viem";
 import {
   forwardAvnuPaymasterRequest,
@@ -52,6 +58,7 @@ export interface DepositServerOptions {
   readonly paymaster?: AvnuPaymasterProxyOptions;
   readonly starknetRpc?: StarknetRpcProxyOptions;
   readonly operationStore?: SwapOperationStore;
+  readonly evmRelay?: RelayExecution;
 }
 
 export function startDepositServer(
@@ -62,6 +69,10 @@ export function startDepositServer(
   const host = options.host ?? "127.0.0.1";
   const operationStore =
     options.operationStore ?? new MemorySwapOperationStore();
+  const returnRelays = new Map<
+    string,
+    { readonly requestHash: string; readonly result: Promise<string> }
+  >();
   return createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", "http://localhost");
@@ -76,6 +87,7 @@ export function startDepositServer(
           paymasterProxyEnabled: Boolean(options.paymaster),
           starknetRpcProxyEnabled: Boolean(options.starknetRpc),
           actionSigningEnabled: false,
+          evmReturnRelayEnabled: Boolean(options.evmRelay),
         });
       }
       if (request.method === "POST" && url.pathname === "/v1/starknet") {
@@ -189,6 +201,52 @@ export function startDepositServer(
           () => layerswap.recoverFundingSwap(createRequest),
         );
         return json(response, prepared.created ? 201 : 200, prepared.value);
+      }
+
+      const returnRelayMatch = /^\/v1\/deposits\/swaps\/([^/]+)\/relay$/.exec(
+        url.pathname,
+      );
+      if (request.method === "POST" && returnRelayMatch) {
+        if (!options.evmRelay) {
+          throw new HttpError(503, "R2 LayerSwap relay is not configured");
+        }
+        const swapId = decodeURIComponent(returnRelayMatch[1]!);
+        const body = record(await readJson(request), "request");
+        const sourceAddress = evmAddress(body.sourceAddress, "sourceAddress");
+        const relayRequest = parseRelayRequest(body.relayRequest);
+        if (
+          relayRequest.policyContext?.kind !== "layerswap-return" ||
+          relayRequest.policyContext.swapId !== swapId ||
+          relayRequest.account.toLowerCase() !== sourceAddress.toLowerCase()
+        ) {
+          throw new HttpError(
+            400,
+            "signed return request changed the LayerSwap route",
+          );
+        }
+        const swap = await layerswap.getSwap(swapId);
+        assertSwapOwner(swap, sourceAddress);
+        if (swap.status !== "user_transfer_pending") {
+          throw new HttpError(
+            409,
+            "return swap no longer accepts an R2 transfer",
+          );
+        }
+        const requestHash = keccak256(
+          stringToHex(JSON.stringify(relayExecutionRequestJson(relayRequest))),
+        );
+        const existing = returnRelays.get(swapId);
+        if (existing && existing.requestHash !== requestHash) {
+          throw new HttpError(
+            409,
+            "return swap is bound to another signed request",
+          );
+        }
+        const result =
+          existing?.result ??
+          options.evmRelay(relayRequest).then((hash) => hash as string);
+        if (!existing) returnRelays.set(swapId, { requestHash, result });
+        return json(response, 202, { transactionHash: await result });
       }
 
       const fundingMatch =

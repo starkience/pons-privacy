@@ -9,13 +9,27 @@ export interface PrivacyExecutionRunner {
     route: DerivedPonsPrivacyRoute,
     request: PrivacyShieldRequest,
   ): Promise<string>;
+  shieldReturn(
+    route: DerivedPonsPrivacyRoute,
+    request: PrivacyShieldRequest,
+  ): Promise<string>;
   withdrawToTransport(
     route: DerivedPonsPrivacyRoute,
     amount: bigint,
+    recovery?: {
+      readonly previousTransactionHash?: string;
+      readonly onRelayStart?: () => void | Promise<void>;
+      readonly onTransactionHash?: (hash: string) => void | Promise<void>;
+    },
   ): Promise<string>;
   submitFundingAction(
     route: DerivedPonsPrivacyRoute,
     action: LayerswapFundingAction,
+    recovery?: {
+      readonly previousTransactionHash?: string;
+      readonly onRelayStart?: () => void | Promise<void>;
+      readonly onTransactionHash?: (hash: string) => void | Promise<void>;
+    },
   ): Promise<string>;
 }
 
@@ -51,6 +65,64 @@ export function createPrivacyExecutionRunner(
   if (config.maxPrivatePaymasterFee < 0n) {
     throw new Error("STRK20 private paymaster fee cap must not be negative");
   }
+  const shieldIdentity = async (
+    identity: DerivedPonsPrivacyRoute["rootIdentity"],
+    request: PrivacyShieldRequest,
+  ): Promise<string> => {
+    const {
+      STRK20_MAINNET,
+      createRootAccountDeployer,
+      createUserStrk20Session,
+    } = await import("@pons-privacy/strk20/browser");
+    const deployment = await createRootAccountDeployer(
+      {
+        rpcUrl: config.rpcUrl,
+        paymasterUrl: config.paymasterUrl,
+        ozAccountClassHash: config.ozAccountClassHash,
+      },
+      identity,
+    ).ensureDeployed({
+      ...(request.previousDeploymentTransactionHash
+        ? { previousTransactionHash: request.previousDeploymentTransactionHash }
+        : {}),
+      ...(request.onDeploymentTransactionHash
+        ? { onTransactionHash: request.onDeploymentTransactionHash }
+        : {}),
+    });
+    const session = createUserStrk20Session(
+      {
+        rpcUrl: config.rpcUrl,
+        poolAddress: STRK20_MAINNET.poolAddress,
+        poolClassHash: STRK20_MAINNET.poolClassHash,
+        provingServiceUrl: STRK20_MAINNET.provingServiceUrl,
+        discoveryServiceUrl: STRK20_MAINNET.discoveryServiceUrl,
+        ohttpPublicKeyConfig: decodeBase64(
+          STRK20_MAINNET.ohttpPublicKeyConfigBase64,
+        ),
+        usdcAddress: STRK20_MAINNET.usdcAddress,
+        privatePaymasterUrl: config.paymasterUrl,
+        maxPrivatePaymasterFee: config.maxPrivatePaymasterFee,
+      },
+      identity,
+    );
+    const result = await session.depositFromPublicBalance({
+      amount: request.amount,
+      fundingTransactionHash: request.fundingTransactionHash,
+      ...(deployment.blockNumber !== undefined
+        ? { deploymentBlockNumber: deployment.blockNumber }
+        : {}),
+      ...(request.previousPrivateTransactionHash
+        ? { previousTransactionHash: request.previousPrivateTransactionHash }
+        : {}),
+      ...(request.onPrivateRelayStart
+        ? { onRelayStart: request.onPrivateRelayStart }
+        : {}),
+      ...(request.onPrivateTransactionHash
+        ? { onTransactionHash: request.onPrivateTransactionHash }
+        : {}),
+    });
+    return result.transactionHash;
+  };
   return {
     async quotePrivateFee() {
       const { AvnuPrivatePaymasterGateway, STRK20_MAINNET } =
@@ -70,64 +142,12 @@ export function createPrivacyExecutionRunner(
       return fee.amount;
     },
     async shieldDeposit(route, request) {
-      const {
-        STRK20_MAINNET,
-        createRootAccountDeployer,
-        createUserStrk20Session,
-      } = await import("@pons-privacy/strk20/browser");
-      const deployment = await createRootAccountDeployer(
-        {
-          rpcUrl: config.rpcUrl,
-          paymasterUrl: config.paymasterUrl,
-          ozAccountClassHash: config.ozAccountClassHash,
-        },
-        route.rootIdentity,
-      ).ensureDeployed({
-        ...(request.previousDeploymentTransactionHash
-          ? {
-              previousTransactionHash:
-                request.previousDeploymentTransactionHash,
-            }
-          : {}),
-        ...(request.onDeploymentTransactionHash
-          ? { onTransactionHash: request.onDeploymentTransactionHash }
-          : {}),
-      });
-      const session = createUserStrk20Session(
-        {
-          rpcUrl: config.rpcUrl,
-          poolAddress: STRK20_MAINNET.poolAddress,
-          poolClassHash: STRK20_MAINNET.poolClassHash,
-          provingServiceUrl: STRK20_MAINNET.provingServiceUrl,
-          discoveryServiceUrl: STRK20_MAINNET.discoveryServiceUrl,
-          ohttpPublicKeyConfig: decodeBase64(
-            STRK20_MAINNET.ohttpPublicKeyConfigBase64,
-          ),
-          usdcAddress: STRK20_MAINNET.usdcAddress,
-          privatePaymasterUrl: config.paymasterUrl,
-          maxPrivatePaymasterFee: config.maxPrivatePaymasterFee,
-        },
-        route.rootIdentity,
-      );
-      const result = await session.depositFromPublicBalance({
-        amount: request.amount,
-        fundingTransactionHash: request.fundingTransactionHash,
-        ...(deployment.blockNumber !== undefined
-          ? { deploymentBlockNumber: deployment.blockNumber }
-          : {}),
-        ...(request.previousPrivateTransactionHash
-          ? { previousTransactionHash: request.previousPrivateTransactionHash }
-          : {}),
-        ...(request.onPrivateRelayStart
-          ? { onRelayStart: request.onPrivateRelayStart }
-          : {}),
-        ...(request.onPrivateTransactionHash
-          ? { onTransactionHash: request.onPrivateTransactionHash }
-          : {}),
-      });
-      return result.transactionHash;
+      return shieldIdentity(route.rootIdentity, request);
     },
-    async withdrawToTransport(route, amount) {
+    async shieldReturn(route, request) {
+      return shieldIdentity(route.returnIdentity, request);
+    },
+    async withdrawToTransport(route, amount, recovery) {
       const { STRK20_MAINNET, createUserStrk20Session } =
         await import("@pons-privacy/strk20/browser");
       const session = createUserStrk20Session(
@@ -149,10 +169,19 @@ export function createPrivacyExecutionRunner(
       const result = await session.withdrawToTransport({
         amount,
         transportAccountAddress: route.transportIdentity.starknetAddress,
+        ...(recovery?.previousTransactionHash
+          ? { previousTransactionHash: recovery.previousTransactionHash }
+          : {}),
+        ...(recovery?.onRelayStart
+          ? { onRelayStart: recovery.onRelayStart }
+          : {}),
+        ...(recovery?.onTransactionHash
+          ? { onTransactionHash: recovery.onTransactionHash }
+          : {}),
       });
       return result.transactionHash;
     },
-    async submitFundingAction(route, action) {
+    async submitFundingAction(route, action, recovery) {
       const { createTransportAccountExecutor } =
         await import("@pons-privacy/strk20/browser");
       const executor = createTransportAccountExecutor(
@@ -163,7 +192,7 @@ export function createPrivacyExecutionRunner(
         },
         route.transportIdentity,
       );
-      const result = await executor.executeFundingAction(action);
+      const result = await executor.executeFundingAction(action, recovery);
       return result.transactionHash;
     },
   };

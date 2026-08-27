@@ -1,4 +1,4 @@
-import { LayerswapClient } from "@pons-privacy/sdk";
+import { createHttpRelay, LayerswapClient } from "@pons-privacy/sdk";
 import { startDepositServer } from "./deposit-server.js";
 import { FileSwapOperationStore } from "./swap-operation-store.js";
 
@@ -20,6 +20,15 @@ startDepositServer(layerswap, port, {
   fundingSwapCreationEnabled:
     process.env.LAYERSWAP_OUTBOUND_SWAP_CREATION_ENABLED === "true",
   operationStore: new FileSwapOperationStore(operationStorePath),
+  ...(process.env.RELAYER_API_KEY
+    ? {
+        evmRelay: createHttpRelay({
+          endpoint:
+            process.env.RELAY_ENDPOINT ?? "http://127.0.0.1:8787/v1/relay",
+          apiKey: process.env.RELAYER_API_KEY,
+        }),
+      }
+    : {}),
   ...(process.env.STARKNET_RPC_URL
     ? { starknetRpc: { endpoint: process.env.STARKNET_RPC_URL } }
     : {}),

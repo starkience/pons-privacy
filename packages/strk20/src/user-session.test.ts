@@ -211,6 +211,42 @@ describe("user-controlled STRK20 outbound", () => {
     expect(transfers.discoverNotes).not.toHaveBeenCalled();
     expect(paymaster.executePoolAction).not.toHaveBeenCalled();
   });
+
+  it("fails closed when the withdrawal relay may already have been accepted", async () => {
+    const { paymaster, session, transfers } = harness();
+    vi.mocked(paymaster.executePoolAction).mockImplementationOnce(
+      async (args) => {
+        await args.onRelayStart?.();
+        throw new Error("network response lost");
+      },
+    );
+    const onRelayStart = vi.fn();
+    await expect(
+      session.withdrawToTransport({
+        amount: 10n,
+        transportAccountAddress: "0x456",
+        onRelayStart,
+      }),
+    ).rejects.toThrow("outcome is unknown; do not resubmit");
+    expect(onRelayStart).toHaveBeenCalledOnce();
+    expect(transfers.invalidateProofNonceCache).not.toHaveBeenCalled();
+  });
+
+  it("reconciles a journaled successful withdrawal without proving again", async () => {
+    const { paymaster, session, transfers } = harness();
+    await expect(
+      session.withdrawToTransport({
+        amount: 10n,
+        transportAccountAddress: "0x456",
+        previousTransactionHash: "0xfeed",
+      }),
+    ).resolves.toMatchObject({
+      transactionHash: "0xfeed",
+      recovered: true,
+    });
+    expect(paymaster.buildPoolAction).not.toHaveBeenCalled();
+    expect(transfers.executeWithInvocation).not.toHaveBeenCalled();
+  });
 });
 
 describe("user-controlled STRK20 inbound", () => {

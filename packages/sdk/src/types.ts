@@ -24,6 +24,13 @@ export interface RelayExecutionRequest {
   prefund: bigint;
   fee: RelayerFee;
   signature: Hex;
+  /** Server-verified metadata; signed calls remain the authorization boundary. */
+  policyContext?: RelayPolicyContext;
+}
+
+export interface RelayPolicyContext {
+  readonly kind: "layerswap-return";
+  readonly swapId: string;
 }
 
 export type RelayExecution = (request: RelayExecutionRequest) => Promise<Hash>;

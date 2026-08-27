@@ -10,6 +10,7 @@ import {
   createPrivacyExecutionRunner,
   parsePrivatePaymasterFeeCap,
 } from "./privacy-execution.js";
+import { createTradeApi } from "./trade-api.js";
 import "./styles.css";
 
 const apiMode = import.meta.env.VITE_API_MODE === "live" ? "live" : "demo";
@@ -19,6 +20,9 @@ const api =
     : createDemoLaunchApi();
 const depositApi = createDepositQuoteApi(
   import.meta.env.VITE_DEPOSIT_API_URL ?? "/deposit-api/v1",
+);
+const tradeApi = createTradeApi(
+  import.meta.env.VITE_PONS_PRIVACY_API_URL ?? "/api",
 );
 const privacyExecutionRequested =
   import.meta.env.VITE_MAINNET_PRIVACY_EXECUTION_ENABLED === "true";
@@ -44,8 +48,10 @@ createRoot(document.getElementById("root")!).render(
     <App
       api={api}
       depositApi={depositApi}
+      tradeApi={tradeApi}
       apiMode={apiMode}
       launchEnabled={import.meta.env.VITE_MAINNET_LAUNCH_ENABLED === "true"}
+      tradeEnabled={import.meta.env.VITE_MAINNET_TRADE_ENABLED === "true"}
       mainnetPrivacyExecutionEnabled={Boolean(privacyExecutionRunner)}
       {...(privacyExecutionRunner ? { privacyExecutionRunner } : {})}
       ozAccountClassHash={import.meta.env.VITE_OZ_ACCOUNT_CLASS_HASH_MAINNET}

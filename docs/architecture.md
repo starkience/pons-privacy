@@ -13,7 +13,8 @@ memory, domain-separated derivation creates:
 - S1: root-linked Starknet account plus its viewing key;
 - S2(index): fresh Starknet transport account for a single public exit;
 - O2(index): fresh, memory-only Robinhood owner EOA; and
-- R2(index): the counterfactual `PonsPrivacyAccount` controlled by O2 and funded by LayerSwap.
+- R2(index): the counterfactual `PonsPrivacyAccount` controlled by O2 and funded by LayerSwap; and
+- S3(index): fresh Starknet sale-return account with an independent per-position viewing key.
 
 The application server never receives the signature, private keys, or viewing key. Users need no
 Ready/Xverse wallet and press no Starknet wallet buttons. The hosted STRK20 prover performs proof
@@ -84,10 +85,18 @@ Launch tokens must never be swept to R1.
 
 ## Sell and return
 
-A sell leaves USDG at R2. A new operation reverses the stablecoin route to a fresh Starknet entry
-account, then shields it into STRK20. Provider delivery and note creation are separate resumable
-states; a failed shield must resume from the recoverable Starknet account rather than create a
-second bridge order.
+A sell is an O2-signed, relayed Pons call from the same isolated R2 that holds the position. The
+MVP sells the full position and then routes all resulting R2 USDG through a non-gasless LayerSwap
+order to fresh S3. The relayer accepts only the exact live USDG action for an order owned by R2;
+arbitrary calls, another source account, native value, and changed recipient/amount calldata are
+rejected.
+
+S3 is deterministic from the user's original EVM signature but has an independent, per-position
+viewing key. After LayerSwap completes, the browser reconciles its exact Starknet output transaction
+and shields only that delivered USDC amount into STRK20 under S3. Provider delivery and note
+creation are separate encrypted, resumable states; a failed shield resumes from S3 rather than
+creating a second bridge order. A later withdrawal must use another fresh public edge and must not
+return through S1.
 
 ## Non-goals
 

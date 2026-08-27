@@ -5,7 +5,9 @@ import {
   type LayerswapFundingAction,
   type LayerswapQuote,
   type LayerswapSwapStatus,
+  type RelayExecutionRequest,
 } from "@pons-privacy/sdk";
+import { relayExecutionRequestJson } from "@pons-privacy/sdk";
 import { isAddress, type Address } from "viem";
 
 export interface PrivacySwapStatus {
@@ -66,6 +68,11 @@ export interface DepositQuoteApi {
     sourceAddress: string,
     amountIn: bigint,
   ): Promise<LayerswapFundingAction>;
+  submitReturnRequest?(
+    swapId: string,
+    sourceAddress: string,
+    request: RelayExecutionRequest,
+  ): Promise<string>;
 }
 
 export function createDepositQuoteApi(
@@ -222,6 +229,20 @@ export function createDepositQuoteApi(
         throw new Error("recovered funding action changed the pending swap");
       }
       return parseFundingAction(payload.action, amountIn);
+    },
+    async submitReturnRequest(swapId, sourceAddress, request) {
+      const source = evmAddress(sourceAddress, "sourceAddress");
+      if (request.account.toLowerCase() !== source.toLowerCase()) {
+        throw new Error("signed return request changed the R2 source account");
+      }
+      const payload = await post(
+        `/deposits/swaps/${encodeURIComponent(identifier(swapId))}/relay`,
+        {
+          sourceAddress: source,
+          relayRequest: relayExecutionRequestJson(request),
+        },
+      );
+      return transactionHash(payload.transactionHash, "transactionHash");
     },
   };
 }
@@ -587,6 +608,13 @@ function hex(value: unknown, field: string): `0x${string}` {
     throw new Error(`${field} must be hex calldata`);
   }
   return value as `0x${string}`;
+}
+
+function transactionHash(value: unknown, field: string): string {
+  if (typeof value !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(value)) {
+    throw new Error(`${field} must be a transaction hash`);
+  }
+  return value;
 }
 
 function sameAddress(value: unknown, expected: string): boolean {

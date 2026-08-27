@@ -25,6 +25,12 @@ const route: ResolvedPonsPrivacyRoute = {
     starknetAddress: "0xabc",
     viewingKey: 1n,
   },
+  returnIdentity: {
+    starknetPrivateKey: `0x${"56".repeat(32)}`,
+    starknetPublicKey: "0xdef",
+    starknetAddress: "0xdef",
+    viewingKey: 2n,
+  },
   robinhoodExecution: { privateKey: OWNER_KEY, address: OWNER },
   robinhoodExecutionAccount: R2,
 };

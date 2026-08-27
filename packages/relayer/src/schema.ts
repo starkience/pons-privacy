@@ -56,6 +56,10 @@ export function parseRelayRequest(value: unknown): RelayExecutionRequest {
     amount: uint(rawFee.amount, "fee.amount"),
     recipient: address(rawFee.recipient, "fee.recipient"),
   };
+  const policyContext =
+    input.policyContext === undefined
+      ? undefined
+      : parsePolicyContext(input.policyContext);
   return {
     chainId: safeNumber(input.chainId, "chainId"),
     factory: address(input.factory, "factory"),
@@ -68,5 +72,21 @@ export function parseRelayRequest(value: unknown): RelayExecutionRequest {
     prefund: uint(input.prefund, "prefund"),
     fee,
     signature: hex(input.signature, "signature"),
+    ...(policyContext ? { policyContext } : {}),
   };
+}
+
+function parsePolicyContext(value: unknown) {
+  const input = record(value, "policyContext");
+  if (input.kind !== "layerswap-return") {
+    throw new Error("policyContext.kind is not supported");
+  }
+  if (
+    typeof input.swapId !== "string" ||
+    !input.swapId.trim() ||
+    input.swapId.length > 128
+  ) {
+    throw new Error("policyContext.swapId must be a bounded identifier");
+  }
+  return { kind: "layerswap-return" as const, swapId: input.swapId };
 }

@@ -71,12 +71,13 @@ executes LayerSwap's exact one-call USDC action through the standard paymaster. 
 to S2 and delivers USDG to fresh Robinhood account R2. The provider can still correlate the order's
 amount, timing, and two public edges.
 
-The launch frontend now includes injected EVM wallet discovery, Robinhood network switching, live
-quotes in both directions, local route derivation, strict LayerSwap action execution, and separate
-“Make private” and “Fund launcher” controls. A signature-derived AES-GCM journal persists only
-encrypted operation state, so interrupted S2/R2 routes can be recovered without storing keys,
-proofs, or route addresses in clear text. LayerSwap creation is also reserved durably by operation
-UUID before the provider call and recovered by that provider reference after retries or restarts.
+The frontend now includes injected EVM wallet discovery, Robinhood network switching, live quotes
+in both directions, local route derivation, strict LayerSwap action execution, private buy/sell
+controls, and separate “Make private” and “Fund launcher” controls. A signature-derived AES-GCM
+journal persists only encrypted operation state, so interrupted S2/R2/S3 routes can be recovered
+without storing keys, proofs, or route addresses in clear text. LayerSwap creation is also reserved
+durably by operation UUID before the provider call and recovered by that provider reference after
+retries or restarts.
 
 After R2 funding completes, the browser builds and signs the exact Pons launch with its memory-held
 O2 key. The application backend independently checks the funded factory-derived R2, reviewed
@@ -87,6 +88,14 @@ disabled by separate production kill switches. The local privacy rails can be en
 controlled minimum-value test without enabling launch broadcast. No token has been launched from
 this repository.
 
+Private trading is implemented with the same browser-held O2 authorization. A buy spends the exact
+USDG delivered to fresh R2 and leaves the Pons position there. A sell spends the full selected R2
+position, returns its resulting USDG through a server-validated, O2-signed LayerSwap action to fresh
+S3, and shields LayerSwap's exact USDC output under an S3-specific viewing key. Trade previews,
+minimum outputs, factory owner/index, Pons curve state, signatures, relay calls, and retry keys are
+independently checked. The Pons transaction remains public from R2; “private” means the connected
+wallet is absent from the Pons and outbound-return graph.
+
 LayerSwap is the selected transport. The backend adapter pins both USDG/USDC directions, protects
 the partner credential, and strictly parses limits, quotes, swap creation, status, transactions,
 and deposit actions. A read-only same-origin Starknet proxy also keeps the Alchemy credential out
@@ -96,10 +105,10 @@ senders, arbitrary recipients, fees, expiry, refunds, interruption recovery, and
 ## Repository
 
 ```text
-apps/web/            EVM wallet, private-deposit quote, launch form, and locked mainnet review
+apps/web/            EVM wallet, private deposit/funding, private trading, and launch form
 evm/                 PonsPrivacyAccount, factory, deployment script, Foundry tests
 packages/sdk/        Robinhood config, Pons adapter, execution signing, transport types
-packages/relayer/    strict Pons semantic relayer and HTTP service
+packages/relayer/    strict Pons/LayerSwap semantic relayer and application HTTP services
 packages/strk20/     user-controlled proving, private paymaster, S2 execution, and preflight
 docs/                architecture, privacy, transport, deployment, phased plan
 ```

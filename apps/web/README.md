@@ -3,8 +3,9 @@
 Frontend-first private-balance and launch flow for Pons V2 on Robinhood Chain. Users connect an
 injected EVM wallet such as MetaMask, Phantom, or Robinhood Wallet. No Starknet wallet is required.
 One fixed non-transaction signature derives the user's S1, viewing key, fresh S2 transport
-accounts, and fresh Robinhood owners locally. A read-only factory call resolves the counterfactual
-R2 `PonsPrivacyAccount`, which is the bridge destination; derived secrets remain in browser memory.
+accounts, fresh Robinhood owners, and fresh S3 return accounts locally. A read-only factory call
+resolves the counterfactual R2 `PonsPrivacyAccount`, which is the bridge destination; derived
+secrets remain in browser memory.
 
 ## Local development
 
@@ -35,10 +36,23 @@ USDC → fresh S2 → fresh R2. It persists a signature-keyed AES-GCM operation 
 strictly validated actions for pending LayerSwap orders after a reload. Local storage never receives
 the signature, derived keys, viewing key, proof, witness, or clear-text S1/S2/R2 route record.
 
-The outbound runner is wired to the STRK20 withdrawal and sponsored S2 transfer primitives but
-requires an explicit public USDC fee cap. The inbound value-movement button stays locked until the
-AVNU `invoke_and_apply_action` shield allowlist is frozen; quoting and encrypted route preparation
-are available now.
+The outbound runner is wired to the STRK20 withdrawal and sponsored S2 transfer primitives and
+requires an explicit public USDC fee cap. The inbound runner validates AVNU's exact
+`invoke_and_apply_action` typed-data call before signing and records its relay boundary for safe
+recovery.
+
+## Private trading
+
+“Buy privately” routes STRK20 USDC through fresh S2 into USDG at fresh R2, then requests a live Pons
+curve preview and signs the exact two-call buy with memory-held O2. “Sell privately” unlocks an
+encrypted completed position, signs a full-position sell from the same R2, creates an R2→S3
+LayerSwap order, and shields the exact delivered USDC under S3's independent viewing key. The
+browser persists relay-start and transaction hashes before later waits and refuses blind retries
+after an ambiguous relay response.
+
+The Pons buy or sell is not confidential: R2, token, amount, price, calldata, balances, and timing
+are public. The connected/root wallet is absent from those Pons calls. LayerSwap can correlate each
+order's public edges.
 
 ## Application API
 
@@ -63,3 +77,6 @@ proof witness, or raw private-note payload.
 boundary. The independent `LAUNCH_SUBMISSION_ENABLED` backend switch also defaults to `false`.
 Keep both false until the funded transport proof, monitoring, abuse controls, and release gates are
 deployed and reviewed.
+
+Private trade submission has a separate `VITE_MAINNET_TRADE_ENABLED` presentation gate and
+`TRADE_SUBMISSION_ENABLED` backend gate. Both default to false.

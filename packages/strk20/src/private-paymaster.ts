@@ -50,6 +50,7 @@ export interface PrivatePaymasterGateway {
     proof: string;
     proofFacts: readonly string[];
     build: PrivatePaymasterBuild;
+    onRelayStart?: () => void | Promise<void>;
   }): Promise<PrivatePaymasterExecution>;
   executeInvokeAndPoolAction(args: {
     poolAddress: string;
@@ -126,7 +127,9 @@ export class AvnuPrivatePaymasterGateway implements PrivatePaymasterGateway {
     proof: string;
     proofFacts: readonly string[];
     build: PrivatePaymasterBuild;
+    onRelayStart?: () => void | Promise<void>;
   }): Promise<PrivatePaymasterExecution> {
+    await args.onRelayStart?.();
     const result = await this.rpc("paymaster_executeTransaction", {
       transaction: {
         type: "apply_action",

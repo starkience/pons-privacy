@@ -109,17 +109,20 @@ Keep these false until the funded round-trip gate passes:
 LAYERSWAP_SWAP_CREATION_ENABLED=false
 LAYERSWAP_OUTBOUND_SWAP_CREATION_ENABLED=false
 LAUNCH_SUBMISSION_ENABLED=false
+TRADE_SUBMISSION_ENABLED=false
 VITE_MAINNET_PRIVACY_EXECUTION_ENABLED=false
 VITE_MAINNET_LAUNCH_ENABLED=false
+VITE_MAINNET_TRADE_ENABLED=false
 BROADCAST=false
 ```
 
 Frontend flags are presentation gates, not authorization boundaries; the backend flags and policy
 relayer remain authoritative.
 
-For the controlled local minimum-value test only, the two LayerSwap switches and
-`VITE_MAINNET_PRIVACY_EXECUTION_ENABLED` may be enabled while every launch/broadcast switch stays
-false. The user still reviews and signs the Robinhood source action in the connected EVM wallet.
+For the controlled local minimum-value test only, the two LayerSwap switches,
+`VITE_MAINNET_PRIVACY_EXECUTION_ENABLED`, `TRADE_SUBMISSION_ENABLED`, and
+`VITE_MAINNET_TRADE_ENABLED` may be enabled while launch stays locked. The user still starts every
+value-moving operation in the frontend; no token or trade should be submitted from the terminal.
 
 ## Mainnet release gate
 

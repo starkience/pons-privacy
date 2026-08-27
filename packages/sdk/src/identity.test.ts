@@ -5,6 +5,7 @@ import {
   derivePonsPrivacyIdentity,
   derivePonsPrivacyRoute,
   deriveRobinhoodExecutionAccount,
+  deriveStarknetReturnAccount,
   deriveStarknetTransportAccount,
 } from "./identity.js";
 
@@ -50,11 +51,16 @@ describe("PrivatePons identity derivation", () => {
       1,
       OZ_CLASS_HASH,
     );
+    const return0 = deriveStarknetReturnAccount(SIGNATURE, 0, OZ_CLASS_HASH);
+    const return1 = deriveStarknetReturnAccount(SIGNATURE, 1, OZ_CLASS_HASH);
     expect(otherIdentity.starknetAddress).not.toBe(identity.starknetAddress);
     expect(account1.address).not.toBe(account0.address);
     expect(account0.privateKey).not.toBe(identity.starknetPrivateKey);
     expect(transport0.starknetAddress).not.toBe(identity.starknetAddress);
     expect(transport1.starknetAddress).not.toBe(transport0.starknetAddress);
+    expect(return0.starknetAddress).not.toBe(identity.starknetAddress);
+    expect(return1.starknetAddress).not.toBe(return0.starknetAddress);
+    expect(return0.viewingKey).not.toBe(identity.viewingKey);
   });
 
   it("derives S1, S2, and the O2 controller from one signature", () => {
@@ -64,6 +70,9 @@ describe("PrivatePons identity derivation", () => {
     );
     expect(route.transportIdentity).toEqual(
       deriveStarknetTransportAccount(SIGNATURE, 7, OZ_CLASS_HASH),
+    );
+    expect(route.returnIdentity).toEqual(
+      deriveStarknetReturnAccount(SIGNATURE, 7, OZ_CLASS_HASH),
     );
     expect(route.robinhoodExecution).toEqual(
       deriveRobinhoodExecutionAccount(SIGNATURE, 7),

@@ -14,7 +14,11 @@
 - server-only LayerSwap/AVNU credentials and independent mainnet kill switches; and
 - frontend wallet connection plus local privacy-account creation;
 - encrypted browser recovery journal and durable UUID-keyed LayerSwap creation/reconciliation; and
-- funded-R2 preview plus exact browser-held O2 signing, backend validation, and launch idempotency.
+- funded-R2 preview plus exact browser-held O2 signing, backend validation, and launch idempotency;
+- private buy/sell previews and O2-signed exact Pons trade relaying;
+- fresh S3 derivation with a separate per-position viewing key;
+- exact live LayerSwap R2 return-call validation and idempotent server relay; and
+- encrypted, resumable sell → bridge → S3 shield state.
 
 ## Phase 2 — funded transport proof
 
@@ -33,9 +37,10 @@ enabling it.
 
 ## Phase 4 — launch, trade, sell, return
 
-The user-signed R2 launch path is implemented but disabled until the funded privacy route passes.
-Add browser-held buy/sell requests and a fresh return account, with delivery and re-shielding as
-separate resumable steps.
+Implemented in code. The user-signed R2 launch path remains independently gated. Browser-held
+buy/sell requests, fresh S3 return accounts, independent S3 viewing keys, exact return actions,
+delivery reconciliation, and re-shielding are separate resumable steps. Complete the funded
+minimum-value round trip and independent review before production activation.
 
 ## Phase 5 — production hardening
 

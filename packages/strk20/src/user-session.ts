@@ -28,6 +28,9 @@ export interface UserStrk20WithdrawalRequest {
   readonly amount: bigint;
   /** Fresh per-operation Starknet account, never the root-linked account. */
   readonly transportAccountAddress: string;
+  readonly previousTransactionHash?: string;
+  readonly onRelayStart?: () => void | Promise<void>;
+  readonly onTransactionHash?: (hash: string) => void | Promise<void>;
 }
 
 export interface UserStrk20WithdrawalResult {
@@ -39,6 +42,7 @@ export interface UserStrk20WithdrawalResult {
   readonly provingBlockNumber: number;
   readonly poolFee: bigint;
   readonly warnings: readonly Warning[];
+  readonly recovered: boolean;
 }
 
 export interface UserStrk20DepositRequest {
@@ -324,6 +328,31 @@ export class UserStrk20Session {
       );
     }
 
+    if (request.previousTransactionHash) {
+      const prior = await this.provider.waitForTransaction(
+        request.previousTransactionHash,
+      );
+      if (prior.isSuccess()) {
+        if (prior.block_number === undefined) {
+          throw new Error(
+            "recovered STRK20 withdrawal receipt has no block number",
+          );
+        }
+        return {
+          transactionHash: request.previousTransactionHash,
+          blockNumber: prior.block_number,
+          token: this.usdcAddress,
+          amount: request.amount,
+          transportAccountAddress,
+          provingBlockNumber: prior.block_number,
+          poolFee: 0n,
+          warnings: [],
+          recovered: true,
+        };
+      }
+      this.transfers.invalidateProofNonceCache();
+    }
+
     const paymasterBuild = await this.paymaster.buildPoolAction(
       this.poolAddress,
       this.usdcAddress,
@@ -384,6 +413,7 @@ export class UserStrk20Session {
     );
     const proof = execution.callAndProof.proof;
     let submitted;
+    let relayStarted = false;
     try {
       submitted = await this.paymaster.executePoolAction({
         poolAddress: this.poolAddress,
@@ -391,11 +421,22 @@ export class UserStrk20Session {
         proof: proof.data,
         proofFacts: proof.proofFacts ?? [],
         build: paymasterBuild,
+        onRelayStart: async () => {
+          relayStarted = true;
+          await request.onRelayStart?.();
+        },
       });
-    } catch {
-      this.transfers.invalidateProofNonceCache();
-      throw new Error("STRK20 private-paymaster submission failed");
+    } catch (error) {
+      if (!relayStarted) this.transfers.invalidateProofNonceCache();
+      if (relayStarted) {
+        throw new Error(
+          "STRK20 withdrawal relay outcome is unknown; do not resubmit until reconciled",
+          { cause: error },
+        );
+      }
+      throw error;
     }
+    await request.onTransactionHash?.(submitted.transactionHash);
 
     const receipt = await this.provider.waitForTransaction(
       submitted.transactionHash,
@@ -419,6 +460,7 @@ export class UserStrk20Session {
       provingBlockNumber,
       poolFee,
       warnings: execution.warnings,
+      recovered: false,
     };
   }
 }

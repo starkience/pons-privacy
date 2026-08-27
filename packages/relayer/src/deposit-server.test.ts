@@ -6,6 +6,14 @@ import type {
   LayerswapFundingSwap,
   LayerswapQuote,
   LayerswapSwap,
+  RelayExecution,
+  RelayExecutionRequest,
+} from "@pons-privacy/sdk";
+import {
+  NO_RELAYER_FEE,
+  PONS_PRIVACY_ACCOUNT_FACTORY_ROBINHOOD,
+  layerswapReturnActionsToCalls,
+  relayExecutionRequestJson,
 } from "@pons-privacy/sdk";
 import {
   startDepositServer,
@@ -56,7 +64,6 @@ const actions: LayerswapDepositAction[] = [
     tokenAddress: "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
     toAddress: "0x2222222222222222222222222222222222222222",
     amount: 10_000_000n,
-    callData: "0x1234",
   },
 ];
 
@@ -87,6 +94,7 @@ afterEach(async () => {
 async function harness(
   swapCreationEnabled = false,
   fundingSwapCreationEnabled = false,
+  evmRelay?: RelayExecution,
 ) {
   const gateway: LayerswapDepositGateway = {
     quote: vi.fn(async () => quote),
@@ -176,6 +184,7 @@ async function harness(
   const server = startDepositServer(gateway, 0, {
     swapCreationEnabled,
     fundingSwapCreationEnabled,
+    ...(evmRelay ? { evmRelay } : {}),
   });
   servers.push(server);
   await once(server, "listening");
@@ -309,5 +318,42 @@ describe("LayerSwap deposit API", () => {
       TRANSPORT,
       10_000_000n,
     );
+  });
+
+  it("relays one exact user-signed R2 return idempotently", async () => {
+    const relay = vi.fn(async () => `0x${"55".repeat(32)}` as const);
+    const { url } = await harness(false, false, relay);
+    const relayRequest: RelayExecutionRequest = {
+      chainId: 4663,
+      factory: PONS_PRIVACY_ACCOUNT_FACTORY_ROBINHOOD,
+      account: SOURCE,
+      owner: "0x3333333333333333333333333333333333333333",
+      accountIndex: 9,
+      calls: layerswapReturnActionsToCalls(actions),
+      nonce: 0n,
+      deadline: 1_900_000_000n,
+      prefund: 0n,
+      fee: NO_RELAYER_FEE,
+      signature: "0x",
+      policyContext: { kind: "layerswap-return", swapId: SWAP_ID },
+    };
+    const body = JSON.stringify({
+      sourceAddress: SOURCE,
+      relayRequest: relayExecutionRequestJson(relayRequest),
+    });
+    const send = () =>
+      fetch(`${url}/v1/deposits/swaps/${SWAP_ID}/relay`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      });
+    const first = await send();
+    const retry = await send();
+    expect(first.status).toBe(202);
+    expect(retry.status).toBe(202);
+    await expect(first.json()).resolves.toEqual({
+      transactionHash: `0x${"55".repeat(32)}`,
+    });
+    expect(relay).toHaveBeenCalledOnce();
   });
 });

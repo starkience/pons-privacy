@@ -80,10 +80,20 @@ export function DepositDialog({
   onWithdrawToTransport?(
     route: ResolvedPonsPrivacyRoute,
     amount: bigint,
+    recovery?: {
+      readonly previousTransactionHash?: string;
+      readonly onRelayStart?: () => void | Promise<void>;
+      readonly onTransactionHash?: (hash: string) => void | Promise<void>;
+    },
   ): Promise<string>;
   onSubmitFundingAction?(
     route: ResolvedPonsPrivacyRoute,
     action: LayerswapFundingAction,
+    recovery?: {
+      readonly previousTransactionHash?: string;
+      readonly onRelayStart?: () => void | Promise<void>;
+      readonly onTransactionHash?: (hash: string) => void | Promise<void>;
+    },
   ): Promise<string>;
   onReadyForLaunch?(account: LaunchAccount): void;
   onClose(): void;
@@ -145,7 +155,7 @@ export function DepositDialog({
       await onCreatePrivacy();
       const journal = await onOpenJournal();
       journalRef.current = journal;
-      setOperations(await journal.list());
+      setOperations(depositOperations(await journal.list()));
       setActivityOpen(true);
     } catch (cause) {
       setError(message(cause));
@@ -182,7 +192,7 @@ export function DepositDialog({
       });
       setRoute(nextRoute);
       setOperation(ready);
-      setOperations(await journal.list());
+      setOperations(depositOperations(await journal.list()));
     } catch (cause) {
       setError(message(cause));
     } finally {
@@ -194,6 +204,9 @@ export function DepositDialog({
     setBusy("resume");
     setError(undefined);
     try {
+      if (candidate.direction !== "deposit" && candidate.direction !== "exit") {
+        throw new Error("This operation belongs to the private trading flow");
+      }
       const nextRoute = await onPrepareRoute(candidate.accountIndex);
       if (
         BigInt(candidate.rootStarknetAddress) !==
@@ -267,14 +280,6 @@ export function DepositDialog({
         });
         setOperation(current);
       } else {
-        const withdraw = requireMethod(
-          onWithdrawToTransport,
-          "STRK20 private withdrawal",
-        );
-        const fund = requireMethod(
-          onSubmitFundingAction,
-          "S2 LayerSwap funding",
-        );
         const create = requireMethod(
           api.createFundingSwap,
           "Funding swap creation",
@@ -289,14 +294,22 @@ export function DepositDialog({
           swapId: prepared.swap.id,
         });
         setOperation(current);
-        const privateTxHash = await withdraw(route, quote.amountIn);
+        const privateTxHash = await withdrawExit(
+          current,
+          route,
+          quote.amountIn,
+        );
         current = await journal.advance(
           operation.id,
           "private-withdrawal-submitted",
           { privateTxHash },
         );
         setOperation(current);
-        const transportTxHash = await fund(route, prepared.depositAction);
+        const transportTxHash = await fundExit(
+          current,
+          route,
+          prepared.depositAction,
+        );
         current = await journal.advance(operation.id, "transport-funded", {
           transportTxHash,
         });
@@ -307,7 +320,7 @@ export function DepositDialog({
         );
         setOperation(current);
       }
-      setOperations(await journal.list());
+      setOperations(depositOperations(await journal.list()));
     } catch (cause) {
       const errorMessage = message(cause);
       if (operation) {
@@ -321,6 +334,63 @@ export function DepositDialog({
     } finally {
       setBusy(undefined);
     }
+  }
+
+  async function withdrawExit(
+    candidate: PrivacyOperation,
+    nextRoute: ResolvedPonsPrivacyRoute,
+    amountIn: bigint,
+  ): Promise<string> {
+    const journal = journalRef.current;
+    if (!journal) throw new Error("The private journal is not unlocked");
+    if (candidate.privateRelayStartedAt && !candidate.privateTxHash) {
+      throw new Error(
+        "The prior STRK20 withdrawal relay is unresolved; do not resubmit it",
+      );
+    }
+    const withdraw = requireMethod(
+      onWithdrawToTransport,
+      "STRK20 private withdrawal",
+    );
+    const patch = (value: Parameters<PonsOperationJournal["advance"]>[2]) =>
+      journal.advance(candidate.id, candidate.state, value).then((current) => {
+        setOperation(current);
+      });
+    return withdraw(nextRoute, amountIn, {
+      ...(candidate.privateTxHash
+        ? { previousTransactionHash: candidate.privateTxHash }
+        : {}),
+      onRelayStart: () =>
+        patch({ privateRelayStartedAt: Date.now() }).then(() => undefined),
+      onTransactionHash: (hash) =>
+        patch({ privateTxHash: hash }).then(() => undefined),
+    });
+  }
+
+  async function fundExit(
+    candidate: PrivacyOperation,
+    nextRoute: ResolvedPonsPrivacyRoute,
+    action: LayerswapFundingAction,
+  ): Promise<string> {
+    const journal = journalRef.current;
+    if (!journal) throw new Error("The private journal is not unlocked");
+    if (candidate.transportRelayStartedAt && !candidate.transportTxHash) {
+      throw new Error("The prior S2 relay is unresolved; do not resubmit it");
+    }
+    const fund = requireMethod(onSubmitFundingAction, "S2 LayerSwap funding");
+    const patch = (value: Parameters<PonsOperationJournal["advance"]>[2]) =>
+      journal.advance(candidate.id, candidate.state, value).then((current) => {
+        setOperation(current);
+      });
+    return fund(nextRoute, action, {
+      ...(candidate.transportTxHash
+        ? { previousTransactionHash: candidate.transportTxHash }
+        : {}),
+      onRelayStart: () =>
+        patch({ transportRelayStartedAt: Date.now() }).then(() => undefined),
+      onTransactionHash: (hash) =>
+        patch({ transportTxHash: hash }).then(() => undefined),
+    });
   }
 
   async function shieldOperation(
@@ -419,10 +489,7 @@ export function DepositDialog({
           "S2 funding-action recovery",
         )(operation.swapId!, route.transportIdentity.starknetAddress, amountIn);
         if (operation.state === "swap-created") {
-          const privateTxHash = await requireMethod(
-            onWithdrawToTransport,
-            "STRK20 private withdrawal",
-          )(route, amountIn);
+          const privateTxHash = await withdrawExit(current, route, amountIn);
           current = await journal.advance(
             operation.id,
             "private-withdrawal-submitted",
@@ -430,10 +497,7 @@ export function DepositDialog({
           );
           setOperation(current);
         }
-        const transportTxHash = await requireMethod(
-          onSubmitFundingAction,
-          "S2 LayerSwap funding",
-        )(route, action);
+        const transportTxHash = await fundExit(current, route, action);
         current = await journal.advance(operation.id, "transport-funded", {
           transportTxHash,
         });
@@ -455,7 +519,7 @@ export function DepositDialog({
         );
       }
       setOperation(current);
-      setOperations(await journal.list());
+      setOperations(depositOperations(await journal.list()));
     } catch (cause) {
       const errorMessage = message(cause);
       try {
@@ -538,7 +602,7 @@ export function DepositDialog({
         );
       }
       setOperation(current);
-      setOperations(await journalRef.current.list());
+      setOperations(depositOperations(await journalRef.current.list()));
     } catch (cause) {
       const errorMessage = message(cause);
       try {
@@ -1039,6 +1103,15 @@ function freshAccountIndex(): number {
 function requireMethod<T>(value: T | undefined, label: string): T {
   if (!value) throw new Error(`${label} is not configured`);
   return value;
+}
+
+function depositOperations(
+  operations: readonly PrivacyOperation[],
+): readonly PrivacyOperation[] {
+  return operations.filter(
+    (operation) =>
+      operation.direction === "deposit" || operation.direction === "exit",
+  );
 }
 
 function stateLabel(state: string): string {
