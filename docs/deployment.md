@@ -75,15 +75,19 @@ The relayer is deliberately Pons-only. It has no environment switch for unrestri
 The backend launch client reads live Pons eligibility, fee, config, USDG approval, and economics;
 derives the counterfactual privacy account; prepares the owner-signed request; and defaults to a
 non-broadcasting dry run. Keep `LAUNCH_OWNER_PRIVATE_KEY` and `RELAYER_API_KEY` in the server secret
-store. Set the token metadata and a reusable random `TOKEN_SALT`, then inspect the dry-run output:
+store. This command is an operator diagnostic, not the user launch path, and must not be used to
+launch a token while the frontend-first release gate is active. A dry run can be inspected without
+broadcasting:
 
 ```sh
 pnpm --filter @pons-privacy/relayer build
 pnpm --filter @pons-privacy/relayer launch:mainnet
 ```
 
-Only set `BROADCAST=true` for the reviewed, final metadata. The client waits for the receipt and
-decodes Pons's `TokenLaunched` event to report the token, curve, deployer, and config.
+The production path is the authenticated application API described in `apps/web/README.md`. Keep
+`BROADCAST` unset and `VITE_MAINNET_LAUNCH_ENABLED=false` until that API, its operation journal, and
+the full end-to-end release gate below are deployed and reviewed. The operator client can decode
+Pons's `TokenLaunched` event after a future, separately authorized broadcast.
 
 ## End-to-end release gate
 

@@ -46,6 +46,11 @@ requests proofs from the pinned hosted prover, and submits withdrawals. End user
 need a Starknet wallet or Starknet confirmation prompts. This is custodial: the project can inspect
 and spend those notes.
 
+The launch frontend is implemented as a frontend-first preview and review flow. It contains no
+wallet-connect control, never receives project custody keys or the relayer credential, and keeps
+mainnet submission disabled unless a production build explicitly opts in. No token has been
+launched from this repository.
+
 Transport is deliberately an interface only. Layerswap is the leading MVP candidate and Rhino.fi
 the fallback, but neither is production-ready until bidirectional small-value tests prove contract
 senders, arbitrary recipients, fees, expiry, refunds, interruption recovery, and exact delivery.
@@ -53,6 +58,7 @@ senders, arbitrary recipients, fees, expiry, refunds, interruption recovery, and
 ## Repository
 
 ```text
+apps/web/            walletless launch form, privacy receipt, and locked mainnet review
 evm/                 PonsPrivacyAccount, factory, deployment script, Foundry tests
 packages/sdk/        Robinhood config, Pons adapter, execution signing, transport types
 packages/relayer/    strict Pons semantic relayer and HTTP service
@@ -69,6 +75,7 @@ The RC.4 Privacy SDK is published through GitHub Packages. Configure a trusted n
 
 ```sh
 pnpm install
+pnpm dev:web
 pnpm test
 pnpm typecheck
 pnpm build
@@ -77,6 +84,8 @@ pnpm test:fork
 
 The ordinary Foundry suite is offline. `pnpm test:fork` reads live Pons state through a local
 Robinhood mainnet fork; its state changes are ephemeral and do not submit mainnet transactions.
+The web app starts in demo mode. Its review flow cannot submit a mainnet launch unless both a live
+application backend and the explicit build-time mainnet switch are configured.
 
 ## Deployments
 
