@@ -10,9 +10,10 @@ pnpm dev:web
 ```
 
 The default `demo` mode returns a local launch preview and keeps mainnet deposit and launch controls
-locked. The Vite development server proxies live quote reads to LayerSwap at
-`/layerswap-api/api/v2`; a deployed application must provide the equivalent same-origin proxy.
-Copy `.env.example` to an ignored `.env.local` only when connecting a deployed application backend.
+locked. Start `pnpm dev:deposit-api` in a second terminal; the Vite development server proxies
+`/deposit-api` to that backend. The backend holds the LayerSwap partner key and makes authenticated
+V2 requests. Copy `.env.example` to an ignored `.env.local` only when connecting a deployed
+application backend.
 
 ## Private deposits
 
@@ -23,10 +24,10 @@ the selected wallet to Robinhood Chain. Quote review is live and pinned to:
 Robinhood USDG → Starknet USDC → STRK20
 ```
 
-The browser does not call LayerSwap order creation and never receives the partner API key. The
-application backend will create and persist orders, validate the exact deposit-action schema, and
-return only narrowly typed wallet actions after the funded route proof is complete. Until then, the
-deposit modal intentionally stops after quote review.
+The browser does not call LayerSwap directly and never receives the partner API key. The backend
+implements pinned creation, status, and deposit-action parsing behind a mainnet gate that is
+disabled by default. It will return only narrowly typed wallet actions after the funded route proof
+is complete. Until then, the deposit modal intentionally stops after quote review.
 
 ## Application API
 

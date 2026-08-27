@@ -17,12 +17,15 @@ Starknet recovery account on return.
 
 LayerSwap is selected for the MVP. Its live API exposed both directions at the research snapshot,
 including Robinhood USDG → Starknet USDC and Starknet USDC → Robinhood USDG, and its
-order/deposit-action model is automatable. The SDK now contains a strict quote client and the web
-app exposes live quote review. Rhino.fi is no longer an active integration target.
+order/deposit-action model is automatable. The SDK contains a strict V2 client for limits, quotes,
+creation, status, transactions, and deposit actions. The web app reads quotes through the Pons
+backend, so the LayerSwap partner key never enters the browser. Rhino.fi is no longer an active
+integration target.
 
-Selection does not make the route production-ready. Partner-authenticated order creation, returned
-deposit actions, arbitrary fresh recipients, and both directions still require funded
-minimum-value execution and reconciliation before mainnet deposit signing is unlocked.
+Selection does not make the route production-ready. Partner-authenticated creation is implemented
+behind an explicit disabled-by-default server gate. Returned deposit actions, arbitrary fresh
+recipients, and both directions still require funded minimum-value execution and reconciliation
+before mainnet creation or deposit signing is unlocked.
 
 Neither provider reproduces a cryptographically bound, atomic “deliver USDC and open a private
 note” operation. Both maintain an order mapping source and destination. Therefore:

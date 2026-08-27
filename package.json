@@ -11,6 +11,7 @@
   "scripts": {
     "build": "pnpm --filter @pons-privacy/sdk build && pnpm --filter @pons-privacy/strk20 build && pnpm --filter @pons-privacy/relayer build && pnpm --filter @pons-privacy/web build && pnpm build:evm",
     "build:evm": "pnpm setup:evm && forge build --root evm",
+    "dev:deposit-api": "pnpm --filter @pons-privacy/sdk build && pnpm --filter @pons-privacy/relayer build && node --env-file=.env packages/relayer/dist/deposit-main.js",
     "dev:web": "pnpm --filter @pons-privacy/web dev",
     "format": "prettier --write '**/*.{ts,tsx,css,json,md,yml}' && forge fmt --root evm",
     "format:check": "prettier --check '**/*.{ts,tsx,css,json,md,yml}' && forge fmt --root evm --check",

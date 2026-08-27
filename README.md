@@ -47,15 +47,16 @@ need a Starknet wallet or Starknet confirmation prompts. This is custodial: the 
 and spend those notes.
 
 The launch frontend now includes injected EVM wallet discovery, Robinhood network switching, a
-private-balance surface, and live LayerSwap quote review for Robinhood USDG → Starknet USDC. It
-never receives project custody keys, a LayerSwap partner key, or the relayer credential. Mainnet
-deposit execution and launch submission remain disabled. No token has been launched from this
-repository.
+private-balance surface, and server-backed live LayerSwap quote review for Robinhood USDG →
+Starknet USDC. It never receives project custody keys, the LayerSwap partner key, or the relayer
+credential. Mainnet deposit execution and launch submission remain disabled. No token has been
+launched from this repository.
 
-LayerSwap is the selected transport. A strict quote client pins both USDG/USDC directions and
-rejects network, asset, amount, and minimum-output drift. Order creation and deposit-action signing
-remain locked until bidirectional small-value tests prove contract senders, arbitrary recipients,
-fees, expiry, refunds, interruption recovery, and exact delivery.
+LayerSwap is the selected transport. The backend adapter pins both USDG/USDC directions, protects
+the partner credential, and strictly parses limits, quotes, swap creation, status, transactions,
+and deposit actions. Mainnet creation and wallet signing remain locked until bidirectional
+small-value tests prove contract senders, arbitrary recipients, fees, expiry, refunds,
+interruption recovery, and exact delivery.
 
 ## Repository
 
@@ -77,6 +78,7 @@ The RC.4 Privacy SDK is published through GitHub Packages. Configure a trusted n
 
 ```sh
 pnpm install
+pnpm dev:deposit-api
 pnpm dev:web
 pnpm test
 pnpm typecheck

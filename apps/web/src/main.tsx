@@ -14,7 +14,7 @@ const api =
     ? createLaunchApi(import.meta.env.VITE_PONS_PRIVACY_API_URL ?? "/api")
     : createDemoLaunchApi();
 const depositApi = createDepositQuoteApi(
-  import.meta.env.VITE_LAYERSWAP_API_URL ?? "/layerswap-api/api/v2",
+  import.meta.env.VITE_DEPOSIT_API_URL ?? "/deposit-api/v1",
 );
 
 createRoot(document.getElementById("root")!).render(

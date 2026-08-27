@@ -11,9 +11,10 @@
 
 ## Phase 2 — transport proof
 
-LayerSwap is selected and its live bidirectional quote routes are pinned in the SDK. Execute
-minimum-size bidirectional LayerSwap orders when partner credentials are available. Prove
-recipients, contract sources, transformations, expiry, retries, and refunds.
+LayerSwap is selected, its live bidirectional routes are pinned in the SDK, and partner-
+authenticated creation/status/deposit-action calls are implemented behind a disabled mainnet gate.
+Execute minimum-size bidirectional LayerSwap orders after the project-held Starknet destination is
+ready. Prove recipients, contract sources, transformations, expiry, retries, and refunds.
 
 Exit gate: freeze validated deposit-action schemas from executed evidence.
 

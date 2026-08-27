@@ -1,4 +1,4 @@
-import { formatUnits, parseUnits } from "viem";
+import { formatUnits, isAddress, parseUnits, type Address } from "viem";
 import type {
   StableTransportQuote,
   TransportAsset,
@@ -8,6 +8,10 @@ import type {
 
 export const LAYERSWAP_API_URL = "https://api.layerswap.io/api/v2";
 export const LAYERSWAP_QUOTE_TTL_MS = 30_000;
+export const LAYERSWAP_ROBINHOOD_USDG_ADDRESS =
+  "0x5fc5360d0400a0fd4f2af552add042d716f1d168" as Address;
+export const LAYERSWAP_STARKNET_USDC_ADDRESS =
+  "0x033068f6539f8e6e6b131e6b2b814e6c34a5224bc66947c47dab9dfee93b35fb";
 
 interface LayerswapRoute {
   readonly sourceNetwork: TransportNetwork;
@@ -37,6 +41,12 @@ export interface LayerswapQuote extends StableTransportQuote {
   readonly path: readonly string[];
 }
 
+export interface LayerswapLimits {
+  readonly direction: TransportDirection;
+  readonly minAmount: bigint;
+  readonly maxAmount: bigint;
+}
+
 export interface LayerswapQuoteClientOptions {
   readonly baseUrl?: string;
   readonly apiKey?: string;
@@ -45,12 +55,81 @@ export interface LayerswapQuoteClientOptions {
   readonly quoteTtlMs?: number;
 }
 
+export type LayerswapSwapStatus =
+  | "user_transfer_pending"
+  | "ls_transfer_pending"
+  | "completed"
+  | "failed"
+  | "expired"
+  | "pending_refund"
+  | "refunded";
+
+export type LayerswapTransactionType = "input" | "output" | "refuel" | "refund";
+
+export type LayerswapTransactionStatus = "completed" | "initiated" | "pending";
+
+export interface LayerswapTransaction {
+  readonly type: LayerswapTransactionType;
+  readonly status: LayerswapTransactionStatus;
+  readonly transactionHash?: string;
+  readonly from?: string;
+  readonly to?: string;
+  readonly amount: bigint;
+}
+
+export type LayerswapDepositActionType =
+  "transfer" | "manual_transfer" | "sign";
+
+export interface LayerswapDepositAction {
+  readonly type: LayerswapDepositActionType;
+  readonly order: number;
+  readonly network: "ROBINHOOD_MAINNET";
+  readonly token: "USDG";
+  readonly tokenAddress: Address;
+  readonly toAddress: Address;
+  readonly amount: bigint;
+  readonly callData?: `0x${string}`;
+  readonly typedData?: Readonly<Record<string, unknown>>;
+  readonly validAfter?: number;
+  readonly validBefore?: number;
+  readonly nonce?: string;
+}
+
+export interface LayerswapSwap {
+  readonly id: string;
+  readonly createdAt: string;
+  readonly referenceId?: string;
+  readonly status: LayerswapSwapStatus;
+  readonly failReason?: string;
+  readonly sourceAddress?: Address;
+  readonly destinationAddress: string;
+  readonly amountIn: bigint;
+  readonly useDepositAddress: boolean;
+  readonly transactions: readonly LayerswapTransaction[];
+}
+
+export interface LayerswapPreparedSwap {
+  readonly quote: LayerswapQuote;
+  readonly swap: LayerswapSwap;
+  readonly depositActions: readonly LayerswapDepositAction[];
+}
+
+export interface CreateLayerswapReturnSwap {
+  readonly amountIn: bigint;
+  readonly sourceAddress: Address;
+  readonly destinationAddress: string;
+  readonly refundAddress: Address;
+  readonly referenceId: string;
+  /** Gasless signing remains disabled until its returned typed data is route-tested. */
+  readonly useGasless?: false;
+}
+
 export class LayerswapQuoteClient {
-  private readonly baseUrl: string;
-  private readonly fetchImpl: typeof fetch;
-  private readonly now: () => number;
-  private readonly quoteTtlMs: number;
-  private readonly apiKey: string | undefined;
+  protected readonly baseUrl: string;
+  protected readonly fetchImpl: typeof fetch;
+  protected readonly now: () => number;
+  protected readonly quoteTtlMs: number;
+  protected readonly apiKey: string | undefined;
 
   constructor(options: LayerswapQuoteClientOptions = {}) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl ?? LAYERSWAP_API_URL);
@@ -80,63 +159,431 @@ export class LayerswapQuoteClient {
     });
     const headers = new Headers({ accept: "application/json" });
     if (this.apiKey) headers.set("X-LS-APIKEY", this.apiKey);
-    const response = await this.fetchImpl(`${this.baseUrl}/quote?${query}`, {
+    const payload = await this.request(`/quote?${query}`, {
       method: "GET",
       headers,
+    });
+    return parseQuote(
+      record(record(payload.data, "data").quote, "data.quote"),
+      direction,
+      amountIn,
+      this.now(),
+      this.quoteTtlMs,
+    );
+  }
+
+  async limits(direction: TransportDirection): Promise<LayerswapLimits> {
+    const route = ROUTES[direction];
+    const query = new URLSearchParams({
+      source_network: route.sourceNetwork,
+      source_token: route.sourceAsset,
+      destination_network: route.destinationNetwork,
+      destination_token: route.destinationAsset,
+      use_deposit_address: "false",
+      use_gasless: "false",
+      refuel: "false",
+      force_user_execution: "false",
+    });
+    const headers = new Headers({ accept: "application/json" });
+    if (this.apiKey) headers.set("X-LS-APIKEY", this.apiKey);
+    const payload = await this.request(`/limits?${query}`, {
+      method: "GET",
+      headers,
+    });
+    const data = record(payload.data, "data");
+    const minAmount = units(data.min_amount, "min_amount");
+    const maxAmount = units(data.max_amount, "max_amount");
+    if (minAmount <= 0n || maxAmount < minAmount) {
+      throw new Error("LayerSwap returned invalid route limits");
+    }
+    return { direction, minAmount, maxAmount };
+  }
+
+  protected async request(
+    path: string,
+    init: RequestInit,
+  ): Promise<Record<string, unknown>> {
+    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+      ...init,
       cache: "no-store",
       redirect: "error",
       referrerPolicy: "no-referrer",
     });
     const payload = await readPayload(response);
-    if (!response.ok || payload.error !== null) {
+    if (
+      !response.ok ||
+      (payload.error !== undefined && payload.error !== null)
+    ) {
       throw new Error(
         errorMessage(payload.error) ??
-          `LayerSwap quote failed with HTTP ${response.status}`,
+          `LayerSwap request failed with HTTP ${response.status}`,
       );
     }
-    const quote = record(record(payload.data, "data").quote, "data.quote");
-    assertNamed(
-      record(quote.source_network, "source_network"),
-      route.sourceNetwork,
-    );
-    assertNamed(record(quote.source_token, "source_token"), route.sourceAsset);
-    assertNamed(
-      record(quote.destination_network, "destination_network"),
-      route.destinationNetwork,
-    );
-    assertNamed(
-      record(quote.destination_token, "destination_token"),
-      route.destinationAsset,
-    );
-
-    const requestedAmount = units(quote.requested_amount, "requested_amount");
-    if (requestedAmount !== amountIn) {
-      throw new Error("LayerSwap quote changed the requested amount");
-    }
-    const expectedAmountOut = units(quote.receive_amount, "receive_amount");
-    const minAmountOut = units(quote.min_receive_amount, "min_receive_amount");
-    const feeAmount = units(quote.total_fee, "total_fee");
-    if (minAmountOut <= 0n || expectedAmountOut < minAmountOut) {
-      throw new Error("LayerSwap quote returned invalid output bounds");
-    }
-    const quotedAt = this.now();
-    return {
-      provider: "layerswap",
-      direction,
-      ...route,
-      amountIn,
-      expectedAmountOut,
-      minAmountOut,
-      feeAmount,
-      expiresAt: quotedAt + this.quoteTtlMs,
-      averageCompletionSeconds: durationSeconds(
-        quote.avg_completion_time,
-        "avg_completion_time",
-      ),
-      path: path(recordArray(quote.path, "path")),
-    };
+    return payload;
   }
 }
+
+export class LayerswapClient extends LayerswapQuoteClient {
+  async createReturnSwap(
+    request: CreateLayerswapReturnSwap,
+  ): Promise<LayerswapPreparedSwap> {
+    this.requireApiKey();
+    if (request.amountIn <= 0n) {
+      throw new Error("LayerSwap swap amount must be positive");
+    }
+    const sourceAddress = evmAddress(request.sourceAddress, "sourceAddress");
+    const refundAddress = evmAddress(request.refundAddress, "refundAddress");
+    if (sourceAddress.toLowerCase() !== refundAddress.toLowerCase()) {
+      throw new Error("LayerSwap refund address must equal the source address");
+    }
+    const destinationAddress = starknetAddress(
+      request.destinationAddress,
+      "destinationAddress",
+    );
+    const referenceId = reference(request.referenceId);
+    const headers = this.authenticatedHeaders();
+    headers.set("content-type", "application/json");
+    headers.set("X-LS-CORRELATION-ID", referenceId);
+    const payload = await this.request("/swaps", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        source_network: "ROBINHOOD_MAINNET",
+        source_token: "USDG",
+        destination_network: "STARKNET_MAINNET",
+        destination_token: "USDC",
+        amount: formatUnits(request.amountIn, 6),
+        source_address: sourceAddress,
+        destination_address: destinationAddress,
+        refund_address: refundAddress,
+        reference_id: referenceId,
+        refuel: false,
+        use_deposit_address: false,
+        use_depository: false,
+        use_gasless: false,
+        force_user_execution: false,
+      }),
+    });
+    const data = record(payload.data, "data");
+    const swap = parseSwap(record(data.swap, "data.swap"));
+    assertReturnSwap(swap, {
+      amountIn: request.amountIn,
+      sourceAddress,
+      destinationAddress,
+      referenceId,
+    });
+    return {
+      quote: parseQuote(
+        record(data.quote, "data.quote"),
+        "return-to-strk20",
+        request.amountIn,
+        this.now(),
+        this.quoteTtlMs,
+      ),
+      swap,
+      depositActions: parseDepositActions(
+        data.deposit_actions ?? [],
+        request.amountIn,
+      ),
+    };
+  }
+
+  async getSwap(swapId: string): Promise<LayerswapSwap> {
+    const id = swapIdentifier(swapId);
+    const payload = await this.request(`/swaps/${encodeURIComponent(id)}`, {
+      method: "GET",
+      headers: this.authenticatedHeaders(),
+    });
+    return parseSwap(record(record(payload.data, "data").swap, "data.swap"));
+  }
+
+  async getDepositActions(
+    swapId: string,
+    sourceAddress: Address,
+    expectedAmount: bigint,
+  ): Promise<readonly LayerswapDepositAction[]> {
+    const id = swapIdentifier(swapId);
+    const source = evmAddress(sourceAddress, "sourceAddress");
+    if (expectedAmount <= 0n) {
+      throw new Error("LayerSwap expected amount must be positive");
+    }
+    const query = new URLSearchParams({ source_address: source });
+    const payload = await this.request(
+      `/swaps/${encodeURIComponent(id)}/deposit_actions?${query}`,
+      { method: "GET", headers: this.authenticatedHeaders() },
+    );
+    const actionData = Array.isArray(payload.data)
+      ? payload.data
+      : record(payload.data, "data").value;
+    return parseDepositActions(actionData, expectedAmount);
+  }
+
+  private authenticatedHeaders(): Headers {
+    const headers = new Headers({ accept: "application/json" });
+    headers.set("X-LS-APIKEY", this.requireApiKey());
+    return headers;
+  }
+
+  private requireApiKey(): string {
+    if (!this.apiKey) throw new Error("LayerSwap API key is required");
+    return this.apiKey;
+  }
+}
+
+function parseQuote(
+  quote: Record<string, unknown>,
+  direction: TransportDirection,
+  amountIn: bigint,
+  quotedAt: number,
+  quoteTtlMs: number,
+): LayerswapQuote {
+  const route = ROUTES[direction];
+  assertNamed(
+    record(quote.source_network, "source_network"),
+    route.sourceNetwork,
+  );
+  assertNamed(record(quote.source_token, "source_token"), route.sourceAsset);
+  assertNamed(
+    record(quote.destination_network, "destination_network"),
+    route.destinationNetwork,
+  );
+  assertNamed(
+    record(quote.destination_token, "destination_token"),
+    route.destinationAsset,
+  );
+
+  const requestedAmount = units(quote.requested_amount, "requested_amount");
+  if (requestedAmount !== amountIn) {
+    throw new Error("LayerSwap quote changed the requested amount");
+  }
+  const expectedAmountOut = units(quote.receive_amount, "receive_amount");
+  const minAmountOut = units(quote.min_receive_amount, "min_receive_amount");
+  const feeAmount = units(quote.total_fee, "total_fee");
+  if (minAmountOut <= 0n || expectedAmountOut < minAmountOut) {
+    throw new Error("LayerSwap quote returned invalid output bounds");
+  }
+  return {
+    provider: "layerswap",
+    direction,
+    ...route,
+    amountIn,
+    expectedAmountOut,
+    minAmountOut,
+    feeAmount,
+    expiresAt: quotedAt + quoteTtlMs,
+    averageCompletionSeconds: durationSeconds(
+      quote.avg_completion_time,
+      "avg_completion_time",
+    ),
+    path: path(recordArray(quote.path, "path")),
+  };
+}
+
+function parseSwap(value: Record<string, unknown>): LayerswapSwap {
+  assertNamed(
+    record(value.source_network, "source_network"),
+    "ROBINHOOD_MAINNET",
+  );
+  assertToken(
+    record(value.source_token, "source_token"),
+    "USDG",
+    LAYERSWAP_ROBINHOOD_USDG_ADDRESS,
+  );
+  assertNamed(
+    record(value.destination_network, "destination_network"),
+    "STARKNET_MAINNET",
+  );
+  assertToken(
+    record(value.destination_token, "destination_token"),
+    "USDC",
+    LAYERSWAP_STARKNET_USDC_ADDRESS,
+  );
+  const metadata = record(value.metadata, "metadata");
+  const sourceAddress = nullableString(value.source_address, "source_address");
+  const destinationAddress = starknetAddress(
+    string(value.destination_address, "destination_address"),
+    "destination_address",
+  );
+  const status = enumValue(
+    value.status,
+    "status",
+    SWAP_STATUSES,
+  ) as LayerswapSwapStatus;
+  const failReason = nullableString(value.fail_reason, "fail_reason");
+  const referenceId = nullableString(
+    metadata.reference_id,
+    "metadata.reference_id",
+  );
+  const createdAt = string(value.created_date, "created_date");
+  if (Number.isNaN(Date.parse(createdAt))) {
+    throw new Error("created_date must be an ISO date");
+  }
+  if (typeof value.use_deposit_address !== "boolean") {
+    throw new Error("use_deposit_address must be a boolean");
+  }
+  return {
+    id: swapIdentifier(string(value.id, "id")),
+    createdAt,
+    ...(referenceId ? { referenceId } : {}),
+    status,
+    ...(failReason ? { failReason } : {}),
+    ...(sourceAddress
+      ? { sourceAddress: evmAddress(sourceAddress, "source_address") }
+      : {}),
+    destinationAddress,
+    amountIn: units(value.requested_amount, "requested_amount"),
+    useDepositAddress: value.use_deposit_address,
+    transactions: parseTransactions(value.transactions),
+  };
+}
+
+function parseTransactions(value: unknown): LayerswapTransaction[] {
+  return recordArray(value, "transactions").map((entry, index) => {
+    const type = enumValue(
+      entry.type,
+      `transactions[${index}].type`,
+      TRANSACTION_TYPES,
+    ) as LayerswapTransactionType;
+    const status = enumValue(
+      entry.status,
+      `transactions[${index}].status`,
+      TRANSACTION_STATUSES,
+    ) as LayerswapTransactionStatus;
+    const transactionHash = nullableString(
+      entry.transaction_hash,
+      `transactions[${index}].transaction_hash`,
+    );
+    const from = nullableString(entry.from, `transactions[${index}].from`);
+    const to = nullableString(entry.to, `transactions[${index}].to`);
+    return {
+      type,
+      status,
+      ...(transactionHash ? { transactionHash } : {}),
+      ...(from ? { from } : {}),
+      ...(to ? { to } : {}),
+      amount: units(entry.amount, `transactions[${index}].amount`),
+    };
+  });
+}
+
+function parseDepositActions(
+  value: unknown,
+  expectedAmount: bigint,
+): LayerswapDepositAction[] {
+  if (!Array.isArray(value))
+    throw new Error("deposit_actions must be an array");
+  const actions = value.map((item, index) => {
+    const action = record(item, `deposit_actions[${index}]`);
+    const type = enumValue(
+      action.type,
+      `deposit_actions[${index}].type`,
+      DEPOSIT_ACTION_TYPES,
+    ) as LayerswapDepositActionType;
+    const network = record(action.network, `deposit_actions[${index}].network`);
+    assertNamed(network, "ROBINHOOD_MAINNET");
+    const token = record(action.token, `deposit_actions[${index}].token`);
+    assertToken(token, "USDG", LAYERSWAP_ROBINHOOD_USDG_ADDRESS);
+    const amount = baseUnits(
+      action.amount_in_base_units,
+      `deposit_actions[${index}].amount_in_base_units`,
+    );
+    if (amount !== expectedAmount) {
+      throw new Error(`deposit_actions[${index}] changed the deposit amount`);
+    }
+    const order = integer(action.order, `deposit_actions[${index}].order`);
+    const toAddress = evmAddress(
+      string(action.to_address, `deposit_actions[${index}].to_address`),
+      `deposit_actions[${index}].to_address`,
+    );
+    const callDataValue = nullableString(
+      action.call_data,
+      `deposit_actions[${index}].call_data`,
+    );
+    const callData = callDataValue
+      ? hex(callDataValue, `deposit_actions[${index}].call_data`)
+      : undefined;
+    const typedData =
+      action.typed_data === undefined || action.typed_data === null
+        ? undefined
+        : record(action.typed_data, `deposit_actions[${index}].typed_data`);
+    if (type === "sign" && !typedData) {
+      throw new Error(`deposit_actions[${index}].typed_data is required`);
+    }
+    const validAfter = optionalInteger(
+      action.valid_after,
+      `deposit_actions[${index}].valid_after`,
+    );
+    const validBefore = optionalInteger(
+      action.valid_before,
+      `deposit_actions[${index}].valid_before`,
+    );
+    const nonce = nullableString(
+      action.nonce,
+      `deposit_actions[${index}].nonce`,
+    );
+    return {
+      type,
+      order,
+      network: "ROBINHOOD_MAINNET" as const,
+      token: "USDG" as const,
+      tokenAddress: LAYERSWAP_ROBINHOOD_USDG_ADDRESS,
+      toAddress,
+      amount,
+      ...(callData ? { callData } : {}),
+      ...(typedData ? { typedData } : {}),
+      ...(validAfter !== undefined ? { validAfter } : {}),
+      ...(validBefore !== undefined ? { validBefore } : {}),
+      ...(nonce ? { nonce } : {}),
+    };
+  });
+  const orders = new Set(actions.map((action) => action.order));
+  if (orders.size !== actions.length) {
+    throw new Error("deposit_actions contains duplicate order values");
+  }
+  return actions.sort((left, right) => left.order - right.order);
+}
+
+function assertReturnSwap(
+  swap: LayerswapSwap,
+  expected: {
+    amountIn: bigint;
+    sourceAddress: Address;
+    destinationAddress: string;
+    referenceId: string;
+  },
+): void {
+  if (swap.amountIn !== expected.amountIn) {
+    throw new Error("LayerSwap created swap changed the requested amount");
+  }
+  if (
+    !swap.sourceAddress ||
+    swap.sourceAddress.toLowerCase() !== expected.sourceAddress.toLowerCase()
+  ) {
+    throw new Error("LayerSwap created swap changed the source address");
+  }
+  if (BigInt(swap.destinationAddress) !== BigInt(expected.destinationAddress)) {
+    throw new Error("LayerSwap created swap changed the destination address");
+  }
+  if (swap.referenceId !== expected.referenceId) {
+    throw new Error("LayerSwap created swap changed the reference ID");
+  }
+  if (swap.useDepositAddress) {
+    throw new Error("LayerSwap unexpectedly enabled a managed deposit address");
+  }
+}
+
+const SWAP_STATUSES = [
+  "user_transfer_pending",
+  "ls_transfer_pending",
+  "completed",
+  "failed",
+  "expired",
+  "pending_refund",
+  "refunded",
+] as const;
+const TRANSACTION_TYPES = ["input", "output", "refuel", "refund"] as const;
+const TRANSACTION_STATUSES = ["completed", "initiated", "pending"] as const;
+const DEPOSIT_ACTION_TYPES = ["transfer", "manual_transfer", "sign"] as const;
 
 function normalizeBaseUrl(value: string): string {
   const base = value.replace(/\/$/, "");
@@ -175,6 +622,107 @@ function assertNamed(value: Record<string, unknown>, expected: string): void {
     throw new Error(`LayerSwap quote route mismatch: expected ${expected}`);
   }
 }
+
+function assertToken(
+  value: Record<string, unknown>,
+  expectedSymbol: string,
+  expectedContract: string,
+): void {
+  assertNamed(value, expectedSymbol);
+  const contract = string(value.contract, `${expectedSymbol}.contract`);
+  if (BigInt(contract) !== BigInt(expectedContract)) {
+    throw new Error(
+      `LayerSwap token contract mismatch: expected ${expectedContract}`,
+    );
+  }
+  if (value.decimals !== 6) {
+    throw new Error(`LayerSwap ${expectedSymbol} must use 6 decimals`);
+  }
+}
+
+function string(value: unknown, field: string): string {
+  if (typeof value !== "string" || !value) {
+    throw new Error(`${field} must be a non-empty string`);
+  }
+  return value;
+}
+
+function nullableString(value: unknown, field: string): string | undefined {
+  if (value === undefined || value === null) return;
+  return string(value, field);
+}
+
+function integer(value: unknown, field: string): number {
+  if (!Number.isSafeInteger(value) || Number(value) < 0) {
+    throw new Error(`${field} must be a non-negative safe integer`);
+  }
+  return Number(value);
+}
+
+function optionalInteger(value: unknown, field: string): number | undefined {
+  if (value === undefined || value === null) return;
+  return integer(value, field);
+}
+
+function enumValue(
+  value: unknown,
+  field: string,
+  allowed: readonly string[],
+): string {
+  if (typeof value !== "string" || !allowed.includes(value)) {
+    throw new Error(`${field} is not supported`);
+  }
+  return value;
+}
+
+function baseUnits(value: unknown, field: string): bigint {
+  if (typeof value !== "string" || !/^(?:0|[1-9][0-9]*)$/.test(value)) {
+    throw new Error(`${field} must be a base-unit integer string`);
+  }
+  return BigInt(value);
+}
+
+function evmAddress(value: string, field: string): Address {
+  if (!isAddress(value) || BigInt(value) === 0n) {
+    throw new Error(`${field} must be a non-zero EVM address`);
+  }
+  return value as Address;
+}
+
+function starknetAddress(value: string, field: string): string {
+  if (!/^0x[0-9a-fA-F]{1,64}$/.test(value)) {
+    throw new Error(`${field} must be a Starknet hex address`);
+  }
+  const parsed = BigInt(value);
+  if (parsed === 0n || parsed >= 2n ** 251n) {
+    throw new Error(`${field} must be a non-zero Starknet address`);
+  }
+  return value.toLowerCase();
+}
+
+function reference(value: string): string {
+  if (!UUID_PATTERN.test(value)) {
+    throw new Error("LayerSwap reference ID must be a UUID");
+  }
+  return value;
+}
+
+function swapIdentifier(value: string): string {
+  if (!UUID_PATTERN.test(value)) {
+    throw new Error("LayerSwap swap ID must be a UUID");
+  }
+  return value;
+}
+
+function hex(value: string, field: string): `0x${string}` {
+  if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) {
+    throw new Error(`${field} must be even-length hex calldata`);
+  }
+  return value as `0x${string}`;
+}
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function units(value: unknown, field: string): bigint {
   if (typeof value !== "number" && typeof value !== "string") {

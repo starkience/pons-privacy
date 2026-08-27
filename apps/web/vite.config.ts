@@ -6,10 +6,9 @@ export default defineConfig({
   server: {
     port: 4173,
     proxy: {
-      "/layerswap-api": {
-        target: "https://api.layerswap.io",
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/layerswap-api/, ""),
+      "/deposit-api": {
+        target: "http://127.0.0.1:8788",
+        rewrite: (path) => path.replace(/^\/deposit-api/, ""),
       },
     },
   },

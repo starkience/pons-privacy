@@ -9,38 +9,28 @@ describe("deposit quote API", () => {
   it("quotes the pinned Robinhood deposit route", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const request = new URL(String(input), "https://pons.local");
-      expect(request.searchParams.get("source_network")).toBe(
-        "ROBINHOOD_MAINNET",
-      );
-      expect(request.searchParams.get("source_token")).toBe("USDG");
-      expect(request.searchParams.get("destination_network")).toBe(
-        "STARKNET_MAINNET",
-      );
-      expect(request.searchParams.get("destination_token")).toBe("USDC");
+      expect(request.pathname).toBe("/deposit-api/v1/deposits/quote");
+      expect(request.searchParams.get("amount")).toBe("10000000");
       return new Response(
         JSON.stringify({
-          error: null,
-          data: {
-            quote: {
-              source_network: { name: "ROBINHOOD_MAINNET" },
-              source_token: { symbol: "USDG" },
-              destination_network: { name: "STARKNET_MAINNET" },
-              destination_token: { symbol: "USDC" },
-              requested_amount: 10,
-              receive_amount: 9.63,
-              min_receive_amount: 9.58,
-              total_fee: 0.37,
-              avg_completion_time: "00:00:22.25",
-              path: [{ provider: "LAYERSWAP", order: 0 }],
-            },
-          },
+          provider: "layerswap",
+          direction: "return-to-strk20",
+          sourceNetwork: "ROBINHOOD_MAINNET",
+          sourceAsset: "USDG",
+          destinationNetwork: "STARKNET_MAINNET",
+          destinationAsset: "USDC",
+          amountIn: "10000000",
+          expectedAmountOut: "9630000",
+          minAmountOut: "9580000",
+          feeAmount: "370000",
+          expiresAt: 30_000,
+          averageCompletionSeconds: 22.25,
+          path: ["LAYERSWAP"],
         }),
       );
     });
     await expect(
-      createDepositQuoteApi("/layerswap-api/api/v2", fetchMock).quote(
-        10_000_000n,
-      ),
+      createDepositQuoteApi("/deposit-api/v1", fetchMock).quote(10_000_000n),
     ).resolves.toMatchObject({ expectedAmountOut: 9_630_000n });
   });
 });
