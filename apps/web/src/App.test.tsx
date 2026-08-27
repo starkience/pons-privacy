@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "./App.js";
+import type { DepositQuoteApi } from "./deposit-api.js";
 import type { LaunchApi, LaunchPreview } from "./launch-api.js";
 
 const preview: LaunchPreview = {
@@ -31,6 +32,26 @@ function api(): LaunchApi {
   };
 }
 
+function depositApi(): DepositQuoteApi {
+  return {
+    quote: vi.fn(async (amountIn) => ({
+      provider: "layerswap" as const,
+      direction: "return-to-strk20" as const,
+      sourceNetwork: "ROBINHOOD_MAINNET" as const,
+      sourceAsset: "USDG" as const,
+      destinationNetwork: "STARKNET_MAINNET" as const,
+      destinationAsset: "USDC" as const,
+      amountIn,
+      expectedAmountOut: amountIn - 370_000n,
+      minAmountOut: amountIn - 420_000n,
+      feeAmount: 370_000n,
+      expiresAt: Date.now() + 30_000,
+      averageCompletionSeconds: 22,
+      path: ["LAYERSWAP"],
+    })),
+  };
+}
+
 function fillRequiredFields() {
   fireEvent.change(screen.getByLabelText("Token name"), {
     target: { value: "Night Market" },
@@ -42,17 +63,33 @@ function fillRequiredFields() {
 
 describe("Pons Privacy launch frontend", () => {
   it("does not ask for a Starknet wallet and blocks incomplete drafts", () => {
-    render(<App api={api()} apiMode="demo" launchEnabled={false} />);
-    expect(screen.getByText(/no Ready, Xverse/i)).toBeInTheDocument();
+    render(
+      <App
+        api={api()}
+        depositApi={depositApi()}
+        apiMode="demo"
+        launchEnabled={false}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /connect wallet/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Starknet shielding/i)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /review launch/i }),
     ).toBeDisabled();
-    expect(screen.queryByText(/connect wallet/i)).not.toBeInTheDocument();
   });
 
   it("previews a valid launch but keeps mainnet submission locked", async () => {
     const launchApi = api();
-    render(<App api={launchApi} apiMode="demo" launchEnabled={false} />);
+    render(
+      <App
+        api={launchApi}
+        depositApi={depositApi()}
+        apiMode="demo"
+        launchEnabled={false}
+      />,
+    );
     fillRequiredFields();
     fireEvent.click(screen.getByRole("button", { name: /review launch/i }));
     expect(
@@ -68,7 +105,14 @@ describe("Pons Privacy launch frontend", () => {
 
   it("submits through the injected backend only when explicitly enabled", async () => {
     const launchApi = api();
-    render(<App api={launchApi} apiMode="live" launchEnabled />);
+    render(
+      <App
+        api={launchApi}
+        depositApi={depositApi()}
+        apiMode="live"
+        launchEnabled
+      />,
+    );
     fillRequiredFields();
     fireEvent.click(screen.getByRole("button", { name: /review launch/i }));
     await screen.findByRole("dialog", { name: /public and irreversible/i });
@@ -80,5 +124,24 @@ describe("Pons Privacy launch frontend", () => {
     expect(
       await screen.findByRole("dialog", { name: /protected queue/i }),
     ).toBeInTheDocument();
+  });
+
+  it("opens the LayerSwap private-deposit route", () => {
+    render(
+      <App
+        api={api()}
+        depositApi={depositApi()}
+        apiMode="demo"
+        launchEnabled={false}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^deposit/i }));
+    expect(
+      screen.getByRole("dialog", {
+        name: /deposit without bringing your wallet/i,
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("LayerSwap").length).toBeGreaterThan(0);
+    expect(screen.getByText("STRK20 private")).toBeInTheDocument();
   });
 });

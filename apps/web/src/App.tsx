@@ -12,6 +12,7 @@ import { ShieldCheckIcon as ShieldCheck } from "@phosphor-icons/react/dist/csr/S
 import { SparkleIcon as Sparkle } from "@phosphor-icons/react/dist/csr/Sparkle";
 import { SunIcon as Sun } from "@phosphor-icons/react/dist/csr/Sun";
 import { WarningIcon as Warning } from "@phosphor-icons/react/dist/csr/Warning";
+import { WalletIcon as Wallet } from "@phosphor-icons/react/dist/csr/Wallet";
 import { XIcon as X } from "@phosphor-icons/react/dist/csr/X";
 import {
   useEffect,
@@ -27,9 +28,13 @@ import type {
   LaunchPreview,
   LaunchSubmission,
 } from "./launch-api.js";
+import { DepositDialog } from "./DepositDialog.js";
+import type { DepositQuoteApi } from "./deposit-api.js";
+import { useEvmWallet } from "./evm-wallet.js";
 
 interface AppProps {
   api: LaunchApi;
+  depositApi: DepositQuoteApi;
   apiMode: "demo" | "live";
   launchEnabled: boolean;
 }
@@ -58,7 +63,7 @@ const emptyDraft: LaunchDraft = {
 
 const encoder = new TextEncoder();
 
-export function App({ api, apiMode, launchEnabled }: AppProps) {
+export function App({ api, depositApi, apiMode, launchEnabled }: AppProps) {
   const [draft, setDraft] = useState<LaunchDraft>(emptyDraft);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [preview, setPreview] = useState<LaunchPreview>();
@@ -67,6 +72,9 @@ export function App({ api, apiMode, launchEnabled }: AppProps) {
   const [busy, setBusy] = useState<"preview" | "submit">();
   const [error, setError] = useState<string>();
   const [theme, setTheme] = useState<Theme>(initialTheme);
+  const [depositOpen, setDepositOpen] = useState(false);
+  const [walletPickerOpen, setWalletPickerOpen] = useState(false);
+  const wallet = useEvmWallet();
 
   const errors = useMemo(() => validateDraft(draft), [draft]);
   const valid = Object.keys(errors).length === 0;
@@ -146,6 +154,15 @@ export function App({ api, apiMode, launchEnabled }: AppProps) {
     setError(undefined);
   }
 
+  function requestWalletConnection() {
+    wallet.clearError();
+    if (wallet.wallets.length > 1) {
+      setWalletPickerOpen(true);
+      return;
+    }
+    void wallet.connect();
+  }
+
   return (
     <div className="site-shell">
       <header className="nav">
@@ -179,12 +196,21 @@ export function App({ api, apiMode, launchEnabled }: AppProps) {
             >
               {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
             </button>
-            <div className="session-button" data-mode={apiMode}>
-              <ShieldCheck size={16} weight="fill" />
+            <button
+              className="wallet-button"
+              type="button"
+              data-connected={Boolean(wallet.account)}
+              onClick={
+                wallet.account
+                  ? () => setDepositOpen(true)
+                  : requestWalletConnection
+              }
+            >
+              <Wallet size={16} weight="fill" />
               <span>
-                {apiMode === "demo" ? "Preview session" : "Protected session"}
+                {wallet.account ? shorten(wallet.account) : "Connect wallet"}
               </span>
-            </div>
+            </button>
           </div>
         </div>
       </header>
@@ -207,6 +233,36 @@ export function App({ api, apiMode, launchEnabled }: AppProps) {
             </span>
           </div>
         </div>
+
+        <section
+          className="private-balance-strip"
+          data-mode={apiMode}
+          aria-label="Private balance"
+        >
+          <div className="balance-identity">
+            <span className="balance-shield">
+              <ShieldCheck size={21} weight="fill" />
+            </span>
+            <p>
+              <small>STRK20 private balance</small>
+              <strong>
+                {wallet.account ? "Not yet funded" : "Connect to get started"}
+              </strong>
+            </p>
+          </div>
+          <div className="balance-route">
+            <span>USDG</span>
+            <i /> <em>LayerSwap</em> <i /> <span>private USDC</span>
+          </div>
+          <button
+            className="deposit-button"
+            type="button"
+            onClick={() => setDepositOpen(true)}
+          >
+            Deposit
+            <ArrowRight size={15} weight="bold" />
+          </button>
+        </section>
 
         <div className="create-shell">
           <section className="form-panel">
@@ -437,9 +493,9 @@ export function App({ api, apiMode, launchEnabled }: AppProps) {
               <div className="privacy-disclosure">
                 <ShieldCheck size={19} weight="fill" />
                 <p>
-                  <strong>No wallet prompt.</strong> No Ready, Xverse, or
-                  Robinhood wallet confirmation is required. Project custody
-                  signs through a fresh execution account.
+                  <strong>One EVM wallet.</strong> Confirm the USDG deposit
+                  once; Starknet shielding, proving, and the fresh Robinhood
+                  launch account are handled behind the scenes.
                 </p>
               </div>
 
@@ -495,7 +551,11 @@ export function App({ api, apiMode, launchEnabled }: AppProps) {
                   value={`${(draft.creatorTaxBps / 100).toFixed(2)}%`}
                 />
                 <DetailRow label="Liquidity" value="Pons-managed" />
-                <DetailRow label="Wallet prompts" value="None" accent />
+                <DetailRow
+                  label="Starknet wallet"
+                  value="Not required"
+                  accent
+                />
               </dl>
             </div>
 
@@ -505,10 +565,10 @@ export function App({ api, apiMode, launchEnabled }: AppProps) {
                 <i aria-hidden="true" />
               </header>
               <ol>
-                <RouteStep index="1" title="Project-held session" active />
+                <RouteStep index="1" title="LayerSwap → STRK20" active />
                 <RouteStep
                   index="2"
-                  title="Fresh execution account"
+                  title="Fresh Robinhood account"
                   active={Boolean(preview || submission)}
                 />
                 <RouteStep
@@ -572,6 +632,42 @@ export function App({ api, apiMode, launchEnabled }: AppProps) {
         />
       ) : null}
 
+      {depositOpen ? (
+        <DepositDialog
+          api={depositApi}
+          account={wallet.account}
+          walletName={wallet.walletName}
+          onConnect={requestWalletConnection}
+          onClose={() => setDepositOpen(false)}
+        />
+      ) : null}
+
+      {walletPickerOpen ? (
+        <WalletPicker
+          wallets={wallet.wallets}
+          connecting={wallet.connecting}
+          onChoose={(id) => {
+            setWalletPickerOpen(false);
+            void wallet.connect(id);
+          }}
+          onClose={() => setWalletPickerOpen(false)}
+        />
+      ) : null}
+
+      {wallet.error ? (
+        <div className="wallet-toast" role="alert">
+          <Warning size={16} weight="fill" />
+          <span>{wallet.error}</span>
+          <button
+            type="button"
+            onClick={wallet.clearError}
+            aria-label="Dismiss wallet error"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ) : null}
+
       {submission ? (
         <div className="modal-backdrop" role="presentation">
           <section
@@ -595,6 +691,65 @@ export function App({ api, apiMode, launchEnabled }: AppProps) {
           </section>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function WalletPicker({
+  wallets,
+  connecting,
+  onChoose,
+  onClose,
+}: {
+  wallets: readonly { id: string; name: string; icon?: string }[];
+  connecting: boolean;
+  onChoose(id: string): void;
+  onClose(): void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section
+        className="wallet-picker"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="wallet-title"
+      >
+        <header>
+          <div>
+            <p className="dialog-overline">EVM wallet</p>
+            <h2 id="wallet-title">Connect to Robinhood Chain</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close wallet picker"
+          >
+            <X size={18} />
+          </button>
+        </header>
+        <div className="wallet-options">
+          {wallets.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              disabled={connecting}
+              onClick={() => onChoose(option.id)}
+            >
+              {option.icon?.startsWith("data:") ? (
+                <img src={option.icon} alt="" />
+              ) : (
+                <Wallet size={22} weight="fill" />
+              )}
+              <span>
+                <strong>{option.name}</strong>
+                <small>Robinhood Chain · 4663</small>
+              </span>
+              <ArrowRight size={16} />
+            </button>
+          ))}
+        </div>
+        <p>No Ready, Xverse, or Starknet wallet is required.</p>
+      </section>
     </div>
   );
 }

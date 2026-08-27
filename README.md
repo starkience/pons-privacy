@@ -46,19 +46,21 @@ requests proofs from the pinned hosted prover, and submits withdrawals. End user
 need a Starknet wallet or Starknet confirmation prompts. This is custodial: the project can inspect
 and spend those notes.
 
-The launch frontend is implemented as a frontend-first preview and review flow. It contains no
-wallet-connect control, never receives project custody keys or the relayer credential, and keeps
-mainnet submission disabled unless a production build explicitly opts in. No token has been
-launched from this repository.
+The launch frontend now includes injected EVM wallet discovery, Robinhood network switching, a
+private-balance surface, and live LayerSwap quote review for Robinhood USDG → Starknet USDC. It
+never receives project custody keys, a LayerSwap partner key, or the relayer credential. Mainnet
+deposit execution and launch submission remain disabled. No token has been launched from this
+repository.
 
-Transport is deliberately an interface only. Layerswap is the leading MVP candidate and Rhino.fi
-the fallback, but neither is production-ready until bidirectional small-value tests prove contract
-senders, arbitrary recipients, fees, expiry, refunds, interruption recovery, and exact delivery.
+LayerSwap is the selected transport. A strict quote client pins both USDG/USDC directions and
+rejects network, asset, amount, and minimum-output drift. Order creation and deposit-action signing
+remain locked until bidirectional small-value tests prove contract senders, arbitrary recipients,
+fees, expiry, refunds, interruption recovery, and exact delivery.
 
 ## Repository
 
 ```text
-apps/web/            walletless launch form, privacy receipt, and locked mainnet review
+apps/web/            EVM wallet, private-deposit quote, launch form, and locked mainnet review
 evm/                 PonsPrivacyAccount, factory, deployment script, Foundry tests
 packages/sdk/        Robinhood config, Pons adapter, execution signing, transport types
 packages/relayer/    strict Pons semantic relayer and HTTP service

@@ -5,6 +5,7 @@ export * from "./chains/robinhood.js";
 export * from "./client.js";
 export * from "./execution.js";
 export * from "./identity.js";
+export * from "./layerswap.js";
 export * from "./relay-http.js";
 export * from "./transport.js";
 export * from "./types.js";

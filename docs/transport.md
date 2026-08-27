@@ -1,6 +1,6 @@
 # USDC ↔ USDG transport
 
-Research snapshot: 2026-08-26. Provider routes, fees, limits, and supported assets are mutable.
+Research snapshot: 2026-08-27. Provider routes, fees, limits, and supported assets are mutable.
 
 ## Required route
 
@@ -15,10 +15,14 @@ Starknet recovery account on return.
 
 ## Decision
 
-Layerswap is the first transport-proof target. Its live API exposed both directions at the research
-snapshot and its order/deposit-action model is automatable. Rhino.fi remains the fallback: the
-user-provided UI flow confirmed Robinhood USDG → Starknet USDC, but credentialed forward-route and
-contract-sender tests are still required.
+LayerSwap is selected for the MVP. Its live API exposed both directions at the research snapshot,
+including Robinhood USDG → Starknet USDC and Starknet USDC → Robinhood USDG, and its
+order/deposit-action model is automatable. The SDK now contains a strict quote client and the web
+app exposes live quote review. Rhino.fi is no longer an active integration target.
+
+Selection does not make the route production-ready. Partner-authenticated order creation, returned
+deposit actions, arbitrary fresh recipients, and both directions still require funded
+minimum-value execution and reconciliation before mainnet deposit signing is unlocked.
 
 Neither provider reproduces a cryptographically bound, atomic “deliver USDC and open a private
 note” operation. Both maintain an order mapping source and destination. Therefore:
@@ -48,4 +52,4 @@ Before implementing the transport adapter against real funds, execute both direc
 7. source and destination transaction reconciliation; and
 8. operator confirmation for production volume and credentials.
 
-Until those pass, the transport is `researched`, not `live` or `production-ready`.
+Until those pass, quotes are `live`; fund movement remains `researched`, not `production-ready`.

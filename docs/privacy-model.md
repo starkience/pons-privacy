@@ -37,8 +37,8 @@ remove the project's custody or eliminate all infrastructure metadata.
 The backend must authenticate every withdrawal against a durable per-user ledger before invoking
 the custodian. A shared STRK20 balance without that ledger is not a multi-user product.
 
-These controls improve the public anonymity set. They do not hide order linkage from Layerswap,
-Rhino.fi, their solvers, or infrastructure capable of correlating network traffic.
+These controls improve the public anonymity set. They do not hide order linkage from LayerSwap,
+its solvers, or infrastructure capable of correlating network traffic.
 
 ## Required product copy
 

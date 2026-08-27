@@ -81,6 +81,19 @@ records. Graduated Pons V4 markets require a separate adapter and policy.
 
 ## Funding and return
 
+Initial private-balance deposit is also a resumable workflow:
+
+```text
+connected Robinhood wallet approves one USDG transfer
+  → LayerSwap order accepts Robinhood USDG
+  → USDC delivered to a fresh Starknet deposit account
+  → delivery independently verified
+  → project-held STRK20 service opens a private note
+```
+
+The connected wallet is public at this deposit edge and LayerSwap can map the order to the Starknet
+delivery. It must never fund a Pons execution account directly.
+
 Funding is a durable state machine, not one transaction:
 
 ```text

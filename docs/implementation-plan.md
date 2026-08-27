@@ -11,10 +11,11 @@
 
 ## Phase 2 — transport proof
 
-Execute minimum-size bidirectional Layerswap orders and the same Rhino matrix when credentials are
-available. Prove recipients, contract sources, transformations, expiry, retries, and refunds.
+LayerSwap is selected and its live bidirectional quote routes are pinned in the SDK. Execute
+minimum-size bidirectional LayerSwap orders when partner credentials are available. Prove
+recipients, contract sources, transformations, expiry, retries, and refunds.
 
-Exit gate: choose the provider from executed evidence and freeze validated deposit-action schemas.
+Exit gate: freeze validated deposit-action schemas from executed evidence.
 
 The project-held RC.4 SDK client and mainnet preflight are implemented, but they do not satisfy this
 gate: no provider route has yet been funded and reconciled.

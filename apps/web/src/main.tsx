@@ -4,6 +4,7 @@ import "@fontsource/ibm-plex-mono/500.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.js";
+import { createDepositQuoteApi } from "./deposit-api.js";
 import { createDemoLaunchApi, createLaunchApi } from "./launch-api.js";
 import "./styles.css";
 
@@ -12,11 +13,15 @@ const api =
   apiMode === "live"
     ? createLaunchApi(import.meta.env.VITE_PONS_PRIVACY_API_URL ?? "/api")
     : createDemoLaunchApi();
+const depositApi = createDepositQuoteApi(
+  import.meta.env.VITE_LAYERSWAP_API_URL ?? "/layerswap-api/api/v2",
+);
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App
       api={api}
+      depositApi={depositApi}
       apiMode={apiMode}
       launchEnabled={import.meta.env.VITE_MAINNET_LAUNCH_ENABLED === "true"}
     />
