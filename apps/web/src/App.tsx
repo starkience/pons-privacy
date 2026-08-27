@@ -1,15 +1,20 @@
+import { ArrowLeftIcon as ArrowLeft } from "@phosphor-icons/react/dist/csr/ArrowLeft";
 import { ArrowRightIcon as ArrowRight } from "@phosphor-icons/react/dist/csr/ArrowRight";
+import { CaretDownIcon as CaretDown } from "@phosphor-icons/react/dist/csr/CaretDown";
 import { CheckIcon as Check } from "@phosphor-icons/react/dist/csr/Check";
 import { CheckCircleIcon as CheckCircle } from "@phosphor-icons/react/dist/csr/CheckCircle";
 import { GlobeSimpleIcon as GlobeSimple } from "@phosphor-icons/react/dist/csr/GlobeSimple";
 import { ImageSquareIcon as ImageSquare } from "@phosphor-icons/react/dist/csr/ImageSquare";
 import { LockKeyIcon as LockKey } from "@phosphor-icons/react/dist/csr/LockKey";
+import { MoonIcon as Moon } from "@phosphor-icons/react/dist/csr/Moon";
 import { RocketLaunchIcon as RocketLaunch } from "@phosphor-icons/react/dist/csr/RocketLaunch";
 import { ShieldCheckIcon as ShieldCheck } from "@phosphor-icons/react/dist/csr/ShieldCheck";
 import { SparkleIcon as Sparkle } from "@phosphor-icons/react/dist/csr/Sparkle";
+import { SunIcon as Sun } from "@phosphor-icons/react/dist/csr/Sun";
 import { WarningIcon as Warning } from "@phosphor-icons/react/dist/csr/Warning";
 import { XIcon as X } from "@phosphor-icons/react/dist/csr/X";
 import {
+  useEffect,
   useMemo,
   useState,
   type CSSProperties,
@@ -32,6 +37,7 @@ interface AppProps {
 type DraftErrors = Partial<
   Record<"name" | "symbol" | "logo" | "description", string>
 >;
+type Theme = "light" | "dark";
 
 const emptyDraft: LaunchDraft = {
   name: "",
@@ -60,11 +66,17 @@ export function App({ api, apiMode, launchEnabled }: AppProps) {
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState<"preview" | "submit">();
   const [error, setError] = useState<string>();
+  const [theme, setTheme] = useState<Theme>(initialTheme);
 
   const errors = useMemo(() => validateDraft(draft), [draft]);
   const valid = Object.keys(errors).length === 0;
   const symbol = draft.symbol.trim().toUpperCase();
   const monogram = symbol.slice(0, 2) || "P?";
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    globalThis.localStorage?.setItem("pons-privacy-theme", theme);
+  }, [theme]);
 
   function update<K extends keyof LaunchDraft>(
     field: K,
@@ -135,108 +147,99 @@ export function App({ api, apiMode, launchEnabled }: AppProps) {
   }
 
   return (
-    <div className="app-shell">
-      <div className="grain" aria-hidden="true" />
-      <header className="topbar">
-        <a className="brand" href="#top" aria-label="Pons Privacy home">
-          <span className="brand-mark">P</span>
-          <span className="brand-copy">
-            <strong>Pons Privacy</strong>
-            <small>STRK20 sanitization layer</small>
-          </span>
-        </a>
-        <nav aria-label="Primary navigation">
-          <a href="#launch">Launch</a>
-          <a href="#privacy">Privacy model</a>
-          <a
-            href="https://robinhood.ponslaunchpad.com/"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Explore Pons <ArrowRight size={13} />
+    <div className="site-shell">
+      <header className="nav">
+        <div className="nav-inner">
+          <a className="nav-brand" href="#top" aria-label="Pons Privacy home">
+            <span className="brand-orbit">
+              <span>p</span>
+              <i aria-hidden="true" />
+            </span>
+            <span className="brand-name">
+              pons <em>privacy</em>
+            </span>
           </a>
-        </nav>
-        <div className="session-chip" data-mode={apiMode}>
-          <span className="pulse" aria-hidden="true" />
-          <span>
-            <small>
-              {apiMode === "demo" ? "Preview build" : "Private session"}
-            </small>
-            <strong>No wallet prompt</strong>
-          </span>
+
+          <div className="nav-actions">
+            <a
+              className="nav-link"
+              href="https://www.ponsfamily.com/launchpad"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Explore
+            </a>
+            <button
+              className="theme-button"
+              type="button"
+              aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+              onClick={() =>
+                setTheme((current) => (current === "light" ? "dark" : "light"))
+              }
+            >
+              {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
+            </button>
+            <div className="session-button" data-mode={apiMode}>
+              <ShieldCheck size={16} weight="fill" />
+              <span>
+                {apiMode === "demo" ? "Preview session" : "Protected session"}
+              </span>
+            </div>
+          </div>
         </div>
       </header>
 
-      <main id="top">
-        <section className="hero" aria-labelledby="hero-title">
-          <div className="hero-index" aria-hidden="true">
-            PP / 01
+      <main className="launch-main" id="top">
+        <div className="create-topbar">
+          <a
+            className="back-link"
+            href="https://www.ponsfamily.com/launchpad"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <ArrowLeft size={16} />
+            <span>Back to Explore</span>
+          </a>
+          <div className="route-pills" aria-label="Launch configuration">
+            <span className="version-pill">v2</span>
+            <span className="private-pill">
+              <LockKey size={12} weight="fill" /> private route
+            </span>
           </div>
-          <div className="hero-copy">
-            <p className="eyebrow">
-              <span>Robinhood Chain</span>
-              <i />
-              <span>Pons V2</span>
-            </p>
-            <h1 id="hero-title">
-              Launch without bringing
-              <span>your wallet along.</span>
-            </h1>
-            <p className="hero-lede">
-              Your token launches through a fresh execution account. The
-              project-held privacy service holds the Starknet keys, orchestrates
-              proofs when required, and submits on Robinhood—no Ready, Xverse,
-              or Robinhood wallet confirmation required.
-            </p>
-          </div>
-          <div className="hero-proof">
-            <ShieldCheck size={25} weight="fill" />
-            <div>
-              <strong>Root-wallet unlinkability</strong>
-              <p>
-                Pons receives the fresh execution account as creator and fee
-                recipient.
-              </p>
-            </div>
-          </div>
-        </section>
+        </div>
 
-        <section className="workspace" id="launch">
-          <form className="launch-sheet" onSubmit={review} noValidate>
-            <div className="sheet-heading">
+        <div className="create-shell">
+          <section className="form-panel">
+            <header className="form-header">
               <div>
-                <p className="section-number">01 — Token dossier</p>
-                <h2>Shape the public launch.</h2>
+                <p className="overline">Pons Privacy</p>
+                <h1>Launch token</h1>
               </div>
-              <span className="draft-stamp">Unsaved draft</span>
-            </div>
+              <span className="network-badge">
+                <i aria-hidden="true" /> Robinhood
+              </span>
+            </header>
 
-            {error ? (
-              <div className="error-banner" role="alert">
-                <Warning size={18} weight="fill" />
-                <span>{error}</span>
-                <button
-                  type="button"
-                  onClick={() => setError(undefined)}
-                  aria-label="Dismiss error"
-                >
-                  <X size={15} />
-                </button>
-              </div>
-            ) : null}
+            <form className="launch-form" onSubmit={review} noValidate>
+              {error ? (
+                <div className="error-banner" role="alert">
+                  <Warning size={17} weight="fill" />
+                  <span>{error}</span>
+                  <button
+                    type="button"
+                    onClick={() => setError(undefined)}
+                    aria-label="Dismiss error"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : null}
 
-            <div className="identity-grid">
-              <div className="token-art" data-has-image={Boolean(draft.logo)}>
-                <span>{monogram}</span>
-                <small>
-                  {draft.logo ? "Artwork linked" : "Artwork preview"}
-                </small>
-              </div>
-              <div className="field-stack">
+              <div className="field-grid">
                 <Field
                   id="name"
-                  label="Token name"
-                  hint={`${encoder.encode(draft.name).length}/64 bytes`}
+                  label="Name"
+                  note={`${encoder.encode(draft.name).length}/64 bytes`}
                   error={errors.name}
                 >
                   <input
@@ -245,7 +248,7 @@ export function App({ api, apiMode, launchEnabled }: AppProps) {
                     aria-label="Token name"
                     value={draft.name}
                     onChange={(event) => update("name", event.target.value)}
-                    placeholder="Night Market"
+                    placeholder="Token name"
                     autoComplete="off"
                     maxLength={64}
                   />
@@ -253,277 +256,306 @@ export function App({ api, apiMode, launchEnabled }: AppProps) {
                 <Field
                   id="symbol"
                   label="Ticker"
-                  hint={`${encoder.encode(symbol).length}/16 bytes`}
+                  note={`${encoder.encode(symbol).length}/16 bytes`}
                   error={errors.symbol}
                 >
-                  <div className="ticker-input">
-                    <span>$</span>
+                  <input
+                    id="symbol"
+                    name="symbol"
+                    aria-label="Ticker"
+                    value={draft.symbol}
+                    onChange={(event) =>
+                      update("symbol", event.target.value.toUpperCase())
+                    }
+                    placeholder="SYMBOL"
+                    autoComplete="off"
+                    maxLength={16}
+                  />
+                </Field>
+
+                <Field
+                  id="description"
+                  label="Description"
+                  note={`${encoder.encode(draft.description).length}/2048 bytes`}
+                  error={errors.description}
+                  wide
+                >
+                  <textarea
+                    id="description"
+                    name="description"
+                    value={draft.description}
+                    onChange={(event) =>
+                      update("description", event.target.value)
+                    }
+                    placeholder="A short description of the token"
+                    rows={3}
+                    maxLength={2_048}
+                  />
+                </Field>
+
+                <Field
+                  id="logo"
+                  label="Token image"
+                  note="IPFS or HTTPS · validated by the backend"
+                  error={errors.logo}
+                  wide
+                >
+                  <div className="artwork-field">
+                    <span className="artwork-thumb">
+                      <ImageSquare size={19} />
+                    </span>
                     <input
-                      id="symbol"
-                      name="symbol"
-                      aria-label="Ticker"
-                      value={draft.symbol}
-                      onChange={(event) =>
-                        update("symbol", event.target.value.toUpperCase())
-                      }
-                      placeholder="NITE"
-                      autoComplete="off"
-                      maxLength={16}
+                      id="logo"
+                      name="logo"
+                      type="url"
+                      value={draft.logo}
+                      onChange={(event) => update("logo", event.target.value)}
+                      placeholder="Paste an image URL"
+                      maxLength={512}
                     />
+                    {draft.logo ? (
+                      <span className="linked-state">linked</span>
+                    ) : null}
                   </div>
                 </Field>
-              </div>
-            </div>
 
-            <Field
-              id="description"
-              label="Description"
-              hint={`${encoder.encode(draft.description).length}/2048 bytes`}
-              error={errors.description}
-            >
-              <textarea
-                id="description"
-                name="description"
-                value={draft.description}
-                onChange={(event) => update("description", event.target.value)}
-                placeholder="Give the market something worth remembering."
-                rows={4}
-                maxLength={2_048}
-              />
-            </Field>
-
-            <Field
-              id="logo"
-              label="Artwork URL"
-              hint="IPFS or HTTPS · backend-validated"
-              error={errors.logo}
-              icon={<ImageSquare size={16} />}
-            >
-              <input
-                id="logo"
-                name="logo"
-                type="url"
-                value={draft.logo}
-                onChange={(event) => update("logo", event.target.value)}
-                placeholder="https://…"
-                maxLength={512}
-              />
-            </Field>
-
-            <div className="divider" />
-
-            <div className="sheet-heading compact">
-              <div>
-                <p className="section-number">02 — Creator economics</p>
-                <h2>Set the durable rules.</h2>
-              </div>
-              <span className="protocol-pill">Pons config 0</span>
-            </div>
-
-            <div className="economics-grid">
-              <div className="tax-control">
-                <div className="control-label">
-                  <span>Creator tax</span>
-                  <strong>{(draft.creatorTaxBps / 100).toFixed(2)}%</strong>
-                </div>
-                <input
-                  aria-label="Creator tax percentage"
-                  type="range"
-                  min="0"
-                  max="10"
-                  step="0.25"
-                  value={draft.creatorTaxBps / 100}
-                  style={
-                    {
-                      "--tax-progress": `${draft.creatorTaxBps / 10}%`,
-                    } as CSSProperties
-                  }
-                  onChange={(event) =>
-                    update(
-                      "creatorTaxBps",
-                      Math.round(Number(event.target.value) * 100),
-                    )
-                  }
-                />
-                <div className="range-labels">
-                  <span>0%</span>
-                  <span>Live maximum 10%</span>
+                <div className="field wide">
+                  <span className="field-label">Paired asset</span>
+                  <div className="locked-select">
+                    <span className="asset-mark">$</span>
+                    <span>
+                      <strong>USDG</strong>
+                      <small>Pons-approved pair</small>
+                    </span>
+                    <LockKey size={14} />
+                  </div>
                 </div>
               </div>
 
-              <button
-                type="button"
-                className="toggle-card"
-                role="switch"
-                aria-checked={draft.buybackEnabled}
-                onClick={() => update("buybackEnabled", !draft.buybackEnabled)}
-              >
-                <span className="toggle-copy">
-                  <strong>Buyback vault</strong>
-                  <small>
-                    Route the configured share toward protocol buybacks.
-                  </small>
-                </span>
-                <span
-                  className="switch"
-                  data-on={draft.buybackEnabled}
-                  aria-hidden="true"
+              <div className="advanced-section">
+                <button
+                  type="button"
+                  className="advanced-toggle"
+                  aria-expanded={advancedOpen}
+                  onClick={() => setAdvancedOpen((open) => !open)}
                 >
-                  <i />
-                </span>
-              </button>
-            </div>
+                  <span>
+                    <strong>Advanced</strong>
+                    <small>Creator economics and social links</small>
+                  </span>
+                  <CaretDown size={15} data-open={advancedOpen} />
+                </button>
 
-            <button
-              type="button"
-              className="advanced-toggle"
-              aria-expanded={advancedOpen}
-              onClick={() => setAdvancedOpen((open) => !open)}
-            >
-              <span>
-                <GlobeSimple size={16} /> Social links
-              </span>
-              <span>{advancedOpen ? "Close" : "Add optional links"}</span>
-            </button>
+                {advancedOpen ? (
+                  <div className="advanced-panel">
+                    <div className="tax-field">
+                      <div className="tax-heading">
+                        <span>
+                          <strong>Creator tax</strong>
+                          <small>
+                            Maximum permitted by live Pons config: 10%
+                          </small>
+                        </span>
+                        <b>{(draft.creatorTaxBps / 100).toFixed(2)}%</b>
+                      </div>
+                      <input
+                        aria-label="Creator tax percentage"
+                        type="range"
+                        min="0"
+                        max="10"
+                        step="0.25"
+                        value={draft.creatorTaxBps / 100}
+                        style={
+                          {
+                            "--tax-progress": `${draft.creatorTaxBps / 10}%`,
+                          } as CSSProperties
+                        }
+                        onChange={(event) =>
+                          update(
+                            "creatorTaxBps",
+                            Math.round(Number(event.target.value) * 100),
+                          )
+                        }
+                      />
+                    </div>
 
-            {advancedOpen ? (
-              <div className="social-grid">
-                {(
-                  [
-                    ["website", "Website"],
-                    ["twitter", "X / Twitter"],
-                    ["telegram", "Telegram"],
-                    ["discord", "Discord"],
-                    ["farcaster", "Farcaster"],
-                  ] as const
-                ).map(([field, label]) => (
-                  <label key={field}>
-                    <span>{label}</span>
-                    <input
-                      aria-label={label}
-                      value={draft.socials[field]}
-                      onChange={(event) =>
-                        updateSocial(field, event.target.value)
+                    <button
+                      type="button"
+                      className="buyback-switch"
+                      role="switch"
+                      aria-checked={draft.buybackEnabled}
+                      onClick={() =>
+                        update("buybackEnabled", !draft.buybackEnabled)
                       }
-                      placeholder="https://…"
-                      maxLength={256}
-                    />
-                  </label>
-                ))}
-              </div>
-            ) : null}
+                    >
+                      <span
+                        className="switch-knob"
+                        data-on={draft.buybackEnabled}
+                      >
+                        <i />
+                      </span>
+                      <span>
+                        <strong>Buyback vault</strong>
+                        <small>
+                          Route the configured share toward protocol buybacks.
+                        </small>
+                      </span>
+                    </button>
 
-            <div className="form-action">
-              <div className="action-copy">
-                <LockKey size={17} />
-                <span>
-                  <strong>No secret enters this browser.</strong>
-                  <small>
-                    The relayer credential and custody keys stay on the backend.
-                  </small>
-                </span>
-              </div>
-              <button
-                className="primary-button"
-                type="submit"
-                disabled={!valid || Boolean(busy)}
-              >
-                {busy === "preview"
-                  ? "Checking live Pons state…"
-                  : "Review launch"}
-                {busy !== "preview" ? (
-                  <ArrowRight size={17} weight="bold" />
+                    <div className="social-heading">
+                      <GlobeSimple size={15} />
+                      <span>Social links</span>
+                    </div>
+                    <div className="social-grid">
+                      {(
+                        [
+                          ["website", "Website"],
+                          ["twitter", "X / Twitter"],
+                          ["telegram", "Telegram"],
+                          ["discord", "Discord"],
+                          ["farcaster", "Farcaster"],
+                        ] as const
+                      ).map(([field, label]) => (
+                        <label key={field}>
+                          <span>{label}</span>
+                          <input
+                            aria-label={label}
+                            value={draft.socials[field]}
+                            onChange={(event) =>
+                              updateSocial(field, event.target.value)
+                            }
+                            placeholder="https://…"
+                            maxLength={256}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                 ) : null}
-              </button>
-            </div>
-          </form>
-
-          <aside className="route-panel" aria-label="Privacy route summary">
-            <div className="route-heading">
-              <p className="section-number">Route receipt</p>
-              <span className="live-indicator">
-                <i /> Mainnet
-              </span>
-            </div>
-
-            <div className="token-receipt">
-              <div className="receipt-art">
-                <span>{monogram}</span>
               </div>
-              <div>
-                <small>Launch candidate</small>
-                <strong>{draft.name.trim() || "Untitled token"}</strong>
-                <span>${symbol || "TICKER"}</span>
-              </div>
-            </div>
 
-            <ol className="route-steps">
-              <RouteStep
-                index="01"
-                title="Project-held session"
-                description="Your authenticated app session authorizes the request. No Starknet wallet opens."
-                active
-              />
-              <RouteStep
-                index="02"
-                title="Fresh execution account"
-                description="A counterfactual Robinhood account becomes the public Pons creator."
-                active={Boolean(preview || submission)}
-              />
-              <RouteStep
-                index="03"
-                title="Pons V2 launch"
-                description="The policy relayer pins live economics, simulates, and submits the exact call."
-                active={Boolean(submission)}
-              />
-            </ol>
-
-            <div className="cost-ledger">
-              <LedgerRow label="Pons launch fee" value="0.0005 ETH" />
-              <LedgerRow label="Pair asset" value="USDG" />
-              <LedgerRow label="Network" value="Robinhood · 4663" />
-              <LedgerRow label="Wallet prompts" value="None" accent />
-            </div>
-
-            <div className="truth-card" id="privacy">
-              <Sparkle size={18} weight="fill" />
-              <div>
-                <strong>Private identity, public market.</strong>
+              <div className="privacy-disclosure">
+                <ShieldCheck size={19} weight="fill" />
                 <p>
-                  Root-wallet identity is sanitized. Token metadata, account,
-                  amounts, timing, prices, and transactions remain public; the
-                  routing provider can link its two legs.
+                  <strong>No wallet prompt.</strong> No Ready, Xverse, or
+                  Robinhood wallet confirmation is required. Project custody
+                  signs through a fresh execution account.
                 </p>
               </div>
+
+              <footer className="form-actions">
+                <div className="fee-copy">
+                  <span>USDG pair · 0.0005 ETH due</span>
+                  <small>
+                    <Sparkle size={12} weight="fill" /> sponsored by relayer
+                  </small>
+                </div>
+                <button
+                  className="primary-button"
+                  type="submit"
+                  disabled={!valid || Boolean(busy)}
+                >
+                  {busy === "preview"
+                    ? "Checking live Pons state…"
+                    : "Review launch"}
+                  {busy !== "preview" ? (
+                    <ArrowRight size={17} weight="bold" />
+                  ) : null}
+                </button>
+              </footer>
+            </form>
+          </section>
+
+          <aside
+            className="preview-panel"
+            aria-label="Token and privacy route preview"
+          >
+            <div className="token-preview-card">
+              <div className="preview-top">
+                <div className="preview-art" data-linked={Boolean(draft.logo)}>
+                  <span>{monogram}</span>
+                </div>
+                <span className="preview-shield">
+                  <ShieldCheck size={14} weight="fill" /> protected
+                </span>
+              </div>
+              <div className="preview-identity">
+                <h2>{draft.name.trim() || "Your token"}</h2>
+                <p>{symbol || "ticker"}</p>
+              </div>
+              <p className="preview-description">
+                {draft.description.trim() ||
+                  "Your token description will appear here."}
+              </p>
+              <dl className="preview-details">
+                <DetailRow label="Launch fee" value="0.0005 ETH" />
+                <DetailRow label="Paired with" value="USDG" />
+                <DetailRow
+                  label="Creator tax"
+                  value={`${(draft.creatorTaxBps / 100).toFixed(2)}%`}
+                />
+                <DetailRow label="Liquidity" value="Pons-managed" />
+                <DetailRow label="Wallet prompts" value="None" accent />
+              </dl>
+            </div>
+
+            <div className="route-card">
+              <header>
+                <span>Private launch route</span>
+                <i aria-hidden="true" />
+              </header>
+              <ol>
+                <RouteStep index="1" title="Project-held session" active />
+                <RouteStep
+                  index="2"
+                  title="Fresh execution account"
+                  active={Boolean(preview || submission)}
+                />
+                <RouteStep
+                  index="3"
+                  title="Pons V2"
+                  active={Boolean(submission)}
+                />
+              </ol>
+              <p>
+                Root-wallet unlinkability only. Metadata, execution account,
+                amounts, prices, timing, and transactions remain public.
+              </p>
             </div>
           </aside>
-        </section>
+        </div>
 
-        <section className="privacy-strip" aria-label="Privacy guarantees">
+        <section
+          className="privacy-boundary"
+          id="privacy"
+          aria-label="Privacy boundary"
+        >
           <div>
-            <span>Hidden from Pons</span>
-            <strong>Your connected or Starknet root wallet</strong>
+            <span>Sanitized from Pons</span>
+            <strong>Your root wallet identity</strong>
           </div>
           <div>
             <span>Always public</span>
-            <strong>Token, account, amounts, prices, timing</strong>
+            <strong>Token, account, amounts and timing</strong>
           </div>
           <div>
-            <span>Project-held</span>
-            <strong>Signer, viewing key, proof orchestration</strong>
+            <span>Held by the project</span>
+            <strong>Signer, viewing key and proof orchestration</strong>
           </div>
         </section>
       </main>
 
-      <footer>
-        <span>Pons Privacy / prototype 0.1</span>
+      <footer className="site-footer">
+        <a className="footer-brand" href="#top">
+          pons privacy
+        </a>
         <p>Root-wallet unlinkability—not confidential Robinhood execution.</p>
         <a
           href="https://docs.ponsfamily.com/v2"
           target="_blank"
           rel="noreferrer"
         >
-          Pons V2 docs <ArrowRight size={12} />
+          Pons docs <ArrowRight size={12} />
         </a>
       </footer>
 
@@ -548,10 +580,10 @@ export function App({ api, apiMode, launchEnabled }: AppProps) {
             aria-modal="true"
             aria-labelledby="success-title"
           >
-            <div className="success-icon">
-              <CheckCircle size={35} weight="fill" />
-            </div>
-            <p className="section-number">Request accepted</p>
+            <span className="success-icon">
+              <CheckCircle size={36} weight="fill" />
+            </span>
+            <p className="dialog-overline">Request accepted</p>
             <h2 id="success-title">The launch entered the protected queue.</h2>
             <p>
               Request <code>{submission.requestId}</code> is bound to execution
@@ -570,28 +602,27 @@ export function App({ api, apiMode, launchEnabled }: AppProps) {
 function Field({
   id,
   label,
-  hint,
+  note,
   error,
-  icon,
+  wide = false,
   children,
 }: {
   id: string;
   label: string;
-  hint: string;
+  note: string;
   error?: string | undefined;
-  icon?: ReactNode | undefined;
+  wide?: boolean;
   children: ReactNode;
 }) {
   return (
-    <label className="field" htmlFor={id} data-invalid={Boolean(error)}>
-      <span className="field-meta">
-        <span>
-          {icon}
-          {label}
-        </span>
-        <small>{error ?? hint}</small>
-      </span>
+    <label
+      className={`field${wide ? " wide" : ""}`}
+      htmlFor={id}
+      data-invalid={Boolean(error)}
+    >
+      <span className="field-label">{label}</span>
       {children}
+      <small className="field-note">{error ?? note}</small>
     </label>
   );
 }
@@ -599,28 +630,21 @@ function Field({
 function RouteStep({
   index,
   title,
-  description,
   active,
 }: {
   index: string;
   title: string;
-  description: string;
   active: boolean;
 }) {
   return (
     <li data-active={active}>
-      <span className="step-index">
-        {active ? <Check size={12} weight="bold" /> : index}
-      </span>
-      <div>
-        <strong>{title}</strong>
-        <p>{description}</p>
-      </div>
+      <span>{active ? <Check size={10} weight="bold" /> : index}</span>
+      <strong>{title}</strong>
     </li>
   );
 }
 
-function LedgerRow({
+function DetailRow({
   label,
   value,
   accent = false,
@@ -631,8 +655,8 @@ function LedgerRow({
 }) {
   return (
     <div data-accent={accent}>
-      <span>{label}</span>
-      <strong>{value}</strong>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
     </div>
   );
 }
@@ -670,7 +694,7 @@ function ReviewDialog({
       >
         <header>
           <div>
-            <p className="section-number">Final review</p>
+            <p className="dialog-overline">Final review</p>
             <h2 id="review-title">This becomes public and irreversible.</h2>
           </div>
           <button
@@ -678,7 +702,7 @@ function ReviewDialog({
             onClick={onClose}
             aria-label="Close launch review"
           >
-            <X size={19} />
+            <X size={18} />
           </button>
         </header>
 
@@ -687,34 +711,34 @@ function ReviewDialog({
           <div>
             <small>Token identity</small>
             <strong>{draft.name}</strong>
-            <p>${draft.symbol}</p>
+            <p>{draft.symbol}</p>
           </div>
         </div>
 
-        <div className="review-ledger">
-          <LedgerRow
+        <dl className="review-ledger">
+          <DetailRow
             label="Network"
             value={`${preview.chainName} · ${preview.chainId}`}
           />
-          <LedgerRow label="Pair asset" value="USDG" />
-          <LedgerRow
+          <DetailRow label="Pair asset" value="USDG" />
+          <DetailRow
             label="Launch fee"
             value={`${preview.launchFeeEth} ETH · sponsored`}
           />
-          <LedgerRow
+          <DetailRow
             label="Creator tax"
             value={`${(draft.creatorTaxBps / 100).toFixed(2)}%`}
           />
-          <LedgerRow
+          <DetailRow
             label="Buyback vault"
             value={draft.buybackEnabled ? "Enabled" : "Disabled"}
           />
-          <LedgerRow
+          <DetailRow
             label="Execution account"
             value={shorten(preview.privacyAccount, 8, 6)}
             accent
           />
-        </div>
+        </dl>
 
         <div className="review-disclosures">
           <div className="disclosure protected">
@@ -727,8 +751,8 @@ function ReviewDialog({
           <div className="disclosure public">
             <Warning size={18} weight="fill" />
             <p>
-              <strong>Public:</strong> this metadata, execution account,
-              transaction, amounts, and timing remain observable.
+              <strong>Public:</strong> metadata, execution account, transaction,
+              amounts, and timing remain observable.
             </p>
           </div>
         </div>
@@ -740,7 +764,7 @@ function ReviewDialog({
             onChange={(event) => onAcknowledge(event.target.checked)}
           />
           <span>
-            I reviewed the token name, symbol, economics, and public privacy
+            I reviewed the token identity, economics, and public privacy
             boundary.
           </span>
         </label>
@@ -768,6 +792,15 @@ function ReviewDialog({
       </section>
     </div>
   );
+}
+
+function initialTheme(): Theme {
+  if (typeof window === "undefined") return "light";
+  const stored = window.localStorage.getItem("pons-privacy-theme");
+  if (stored === "light" || stored === "dark") return stored;
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
 }
 
 function validateDraft(draft: LaunchDraft): DraftErrors {
