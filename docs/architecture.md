@@ -11,8 +11,9 @@ The user's connected Robinhood EVM wallet signs one fixed, non-transaction messa
 memory, domain-separated derivation creates:
 
 - S1: root-linked Starknet account plus its viewing key;
-- S2(index): fresh Starknet transport account for a single public exit; and
-- R2(index): fresh Robinhood owner of a `PonsPrivacyAccount` position.
+- S2(index): fresh Starknet transport account for a single public exit;
+- O2(index): fresh, memory-only Robinhood owner EOA; and
+- R2(index): the counterfactual `PonsPrivacyAccount` controlled by O2 and funded by LayerSwap.
 
 The application server never receives the signature, private keys, or viewing key. Users need no
 Ready/Xverse wallet and press no Starknet wallet buttons. The hosted STRK20 prover performs proof
@@ -65,9 +66,9 @@ and provider correlation remain possible.
 
 ## Pons execution
 
-R2 owns a counterfactual `PonsPrivacyAccount`. The existing factory deploys it on first relayed
-execution. Owner signatures bind chain, account, exact calls, nonce, deadline, relayer fee, and
-native prefund. The policy relayer permits only validated Pons launch/buy/sell batches.
+R2 is the counterfactual `PonsPrivacyAccount`; O2 controls it. The existing factory deploys R2 on
+first relayed execution. O2 signatures bind chain, account, exact calls, nonce, deadline, relayer
+fee, and native prefund. The policy relayer permits only validated Pons launch/buy/sell batches.
 
 Pons sees R2 as creator/trader. Token metadata, curve, trades, balances, and times remain public.
 Launch tokens must never be swept to R1.

@@ -31,12 +31,15 @@ import type {
 import { DepositDialog } from "./DepositDialog.js";
 import type { DepositQuoteApi } from "./deposit-api.js";
 import { useEvmWallet } from "./evm-wallet.js";
+import type { PrivacyExecutionRunner } from "./privacy-execution.js";
 
 interface AppProps {
   api: LaunchApi;
   depositApi: DepositQuoteApi;
   apiMode: "demo" | "live";
   launchEnabled: boolean;
+  mainnetPrivacyExecutionEnabled?: boolean;
+  privacyExecutionRunner?: PrivacyExecutionRunner | undefined;
   ozAccountClassHash?: string | undefined;
 }
 
@@ -69,6 +72,8 @@ export function App({
   depositApi,
   apiMode,
   launchEnabled,
+  mainnetPrivacyExecutionEnabled = false,
+  privacyExecutionRunner,
   ozAccountClassHash,
 }: AppProps) {
   const [draft, setDraft] = useState<LaunchDraft>(emptyDraft);
@@ -81,6 +86,8 @@ export function App({
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [depositOpen, setDepositOpen] = useState(false);
   const [walletPickerOpen, setWalletPickerOpen] = useState(false);
+  const [preparedExecutionAccount, setPreparedExecutionAccount] =
+    useState<string>();
   const wallet = useEvmWallet();
 
   const errors = useMemo(() => validateDraft(draft), [draft]);
@@ -253,7 +260,11 @@ export function App({
             <p>
               <small>STRK20 private balance</small>
               <strong>
-                {wallet.account ? "Not yet funded" : "Connect to get started"}
+                {preparedExecutionAccount
+                  ? `Launcher ready · ${shorten(preparedExecutionAccount)}`
+                  : wallet.account
+                    ? "Not yet funded"
+                    : "Connect to get started"}
               </strong>
             </p>
           </div>
@@ -646,12 +657,37 @@ export function App({
           walletName={wallet.walletName}
           privacyAccount={wallet.privacyAccount}
           privacyConfigured={Boolean(ozAccountClassHash)}
+          mainnetExecutionEnabled={mainnetPrivacyExecutionEnabled}
           derivingPrivacy={wallet.derivingPrivacy}
           onConnect={requestWalletConnection}
           onCreatePrivacy={async () => {
-            if (!ozAccountClassHash) return;
-            await wallet.derivePrivacyIdentity(ozAccountClassHash);
+            if (!ozAccountClassHash) {
+              throw new Error("The Starknet account class is not configured");
+            }
+            return wallet.derivePrivacyIdentity(ozAccountClassHash);
           }}
+          onPrepareRoute={async (accountIndex) => {
+            if (!ozAccountClassHash) {
+              throw new Error("The Starknet account class is not configured");
+            }
+            return wallet.derivePrivacyRoute(accountIndex, ozAccountClassHash);
+          }}
+          onOpenJournal={async () => {
+            if (!ozAccountClassHash) {
+              throw new Error("The Starknet account class is not configured");
+            }
+            return wallet.openOperationJournal(ozAccountClassHash);
+          }}
+          onSubmitDepositActions={wallet.submitDepositActions}
+          {...(privacyExecutionRunner
+            ? {
+                onWithdrawToTransport:
+                  privacyExecutionRunner.withdrawToTransport,
+                onSubmitFundingAction:
+                  privacyExecutionRunner.submitFundingAction,
+              }
+            : {})}
+          onReadyForLaunch={setPreparedExecutionAccount}
           onClose={() => setDepositOpen(false)}
         />
       ) : null}

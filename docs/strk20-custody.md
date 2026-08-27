@@ -8,8 +8,9 @@ The connected Robinhood EVM wallet signs one fixed message that explicitly autho
 Domain-separated hashes derive:
 
 - S1: the user's root-linked Starknet account and private/viewing keys;
-- S2(index): a fresh Starknet transport account for one public exit; and
-- R2(index): a fresh Robinhood execution owner for one Pons position.
+- S2(index): a fresh Starknet transport account for one public exit;
+- O2(index): a fresh, memory-only Robinhood owner EOA; and
+- R2(index): the factory-predicted `PonsPrivacyAccount` controlled by O2.
 
 The signature and derived secrets live only in a browser-memory ref. They are cleared on account
 change/disconnect and are never sent to the application backend, stored in local/session storage,
@@ -36,6 +37,16 @@ Public pool/service pins live in `deployments/strk20-mainnet.json`. The Starknet
 LayerSwap key, and AVNU paymaster key stay server-side. The mainnet OpenZeppelin account class hash
 is required public configuration and must be verified as declared before any funded test.
 
-Before real value: perform a minimum-size round trip, test expiry/refunds/restarts, persist an
-idempotent operation journal, add rate limits, independently audit derivation and paymaster code,
-and review all logs for signature, key, viewing-key, witness, proof, and exact private-payload leaks.
+The pinned class is OpenZeppelin 3.x `AccountUpgradeable` at
+`0x01d1777db36cdd06dd62cfde77b1b6ae06412af95d57a13dc40ac77b8a702381`; its Stark-curve constructor
+and SRC9 ABI were verified against the declared Starknet mainnet class on 2026-08-27.
+
+The privacy-pool pin does not currently match the class at the configured pool address. The
+supplied class is StarkWare's tagged V1 mainnet deployment, but the address now returns
+`0x67dddd89d80fedadc06b6f160798f94800a4a70164e5a24301cd0d6076b554d`. The preflight therefore
+blocks every funded path until StarkWare confirms the full live compatibility set; changing only
+the expected class hash is not an acceptable workaround.
+
+Before real value: perform a minimum-size round trip, test expiry/refunds/restarts, add rate limits,
+independently audit derivation, encrypted-journal and paymaster code, and review all logs for
+signature, key, viewing-key, witness, proof, and exact private-payload leaks.

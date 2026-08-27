@@ -44,8 +44,18 @@ Phase 1 is implemented:
 The STRK20 mainnet client is implemented against Privacy SDK `0.14.3-rc.4` with user-controlled,
 memory-only keys. One non-transaction signature from the connected Robinhood EVM wallet derives
 the user's root-linked Starknet account (S1), viewing key, fresh per-operation Starknet transport
-accounts (S2), and fresh Robinhood execution owners. No Ready/Xverse wallet or Starknet prompt is
-required, and the project does not receive the signature or derived private/viewing keys.
+accounts (S2), and fresh Robinhood execution owners (O2). No Ready/Xverse wallet or Starknet prompt
+is required, and the project does not receive the signature or derived private/viewing keys. The
+deployed Robinhood factory resolves each owner's counterfactual `PonsPrivacyAccount` (R2);
+LayerSwap funds R2 directly, never O2.
+
+Mainnet STRK20 execution is currently fail-closed. On 2026-08-27 the configured pool address
+reported class hash `0x67dddd89d80fedadc06b6f160798f94800a4a70164e5a24301cd0d6076b554d`,
+not the supplied V1/RC pin
+`0x030b8c540cf04d8ef0f4db2a9098d9cc0e35e83af1cb3325f5a4f40144b4b30b`. StarkWare's public
+repository identifies the supplied hash as its 2026-04-20 V1 mainnet deployment, while its
+2026-07-08 V2 tag documents a different class again. Do not enable funded execution until
+StarkWare confirms the live pool, SDK, prover, and discovery compatibility set.
 
 The outbound invariant is enforced in code: S1 cannot be the public bridge source. The hosted
 prover builds a private withdrawal to S2, AVNU's private paymaster submits the proof, and S2 then
@@ -53,9 +63,11 @@ executes LayerSwap's exact one-call USDC action through the standard paymaster. 
 to S2 and delivers USDG to fresh Robinhood account R2. The provider can still correlate the order's
 amount, timing, and two public edges.
 
-The launch frontend now includes injected EVM wallet discovery, Robinhood network switching, a
-private-balance surface, local privacy-account derivation, and server-backed live LayerSwap quote
-review for Robinhood USDG → Starknet USDC. It never receives the LayerSwap, AVNU, or relayer
+The launch frontend now includes injected EVM wallet discovery, Robinhood network switching, live
+quotes in both directions, local route derivation, strict LayerSwap action execution, and separate
+“Make private” and “Fund launcher” controls. A signature-derived AES-GCM journal persists only
+encrypted operation state, so interrupted S2/R2 routes can be recovered without storing keys,
+proofs, or route addresses in clear text. It never receives the LayerSwap, AVNU, or relayer
 credentials. Mainnet deposit, outbound funding, and launch submission remain disabled by separate
 kill switches. No token has been launched from this repository.
 

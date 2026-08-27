@@ -138,10 +138,12 @@ describe("Pons Privacy launch frontend", () => {
     fireEvent.click(screen.getByRole("button", { name: /^deposit/i }));
     expect(
       screen.getByRole("dialog", {
-        name: /deposit without bringing your wallet/i,
+        name: /move value without exposing the root wallet/i,
       }),
     ).toBeInTheDocument();
     expect(screen.getAllByText("LayerSwap").length).toBeGreaterThan(0);
-    expect(screen.getByText("STRK20 private")).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: /fund launcher/i }),
+    ).toBeInTheDocument();
   });
 });

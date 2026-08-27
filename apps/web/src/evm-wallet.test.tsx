@@ -1,10 +1,15 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import {
   derivePonsPrivacyIdentity,
+  derivePonsPrivacyRoute,
+  LAYERSWAP_ROBINHOOD_USDG_ADDRESS,
+  PONS_PRIVACY_ACCOUNT_FACTORY_ROBINHOOD,
   PONS_PRIVACY_IDENTITY_MESSAGE,
+  ponsPrivacyAccountFactoryAbi,
 } from "@pons-privacy/sdk";
-import { stringToHex } from "viem";
+import { encodeFunctionData, encodeFunctionResult, stringToHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { useEvmWallet, type Eip1193Provider } from "./evm-wallet.js";
 
@@ -12,6 +17,8 @@ const OZ_CLASS_HASH = "0x123";
 
 function Harness() {
   const wallet = useEvmWallet();
+  const [transaction, setTransaction] = useState("none");
+  const [route, setRoute] = useState("none");
   return (
     <div>
       <button type="button" onClick={() => void wallet.connect()}>
@@ -23,8 +30,41 @@ function Harness() {
       >
         private
       </button>
+      <button
+        type="button"
+        onClick={() =>
+          void wallet
+            .derivePrivacyRoute(7, OZ_CLASS_HASH)
+            .then((resolved) => setRoute(resolved.robinhoodExecutionAccount))
+        }
+      >
+        route
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          void wallet
+            .submitDepositActions([
+              {
+                type: "transfer",
+                order: 0,
+                network: "ROBINHOOD_MAINNET",
+                token: "USDG",
+                tokenAddress: LAYERSWAP_ROBINHOOD_USDG_ADDRESS,
+                toAddress: "0x3333333333333333333333333333333333333333",
+                amount: 10_000_000n,
+                callData: "0x1234",
+              },
+            ])
+            .then((hashes) => setTransaction(hashes[0] ?? "none"))
+        }
+      >
+        deposit-action
+      </button>
       <output>{wallet.account ?? wallet.error ?? "idle"}</output>
       <output data-testid="privacy">{wallet.privacyAccount ?? "none"}</output>
+      <output data-testid="transaction">{transaction}</output>
+      <output data-testid="route">{route}</output>
     </div>
   );
 }
@@ -105,6 +145,89 @@ describe("EVM wallet connection", () => {
     expect(request).toHaveBeenCalledWith({
       method: "personal_sign",
       params: [stringToHex(PONS_PRIVACY_IDENTITY_MESSAGE), signer.address],
+    });
+  });
+
+  it("resolves the factory account as the Robinhood funding destination", async () => {
+    const signer = privateKeyToAccount(`0x${"12".repeat(32)}`);
+    const signature = await signer.signMessage({
+      message: PONS_PRIVACY_IDENTITY_MESSAGE,
+    });
+    const derived = derivePonsPrivacyRoute(signature, 7, OZ_CLASS_HASH);
+    const predicted = "0x4444444444444444444444444444444444444444";
+    const request = vi.fn(
+      async ({
+        method,
+        params,
+      }: {
+        method: string;
+        params?: readonly unknown[] | object;
+      }) => {
+        if (method === "eth_requestAccounts") return [signer.address];
+        if (method === "eth_chainId") return "0x1237";
+        if (method === "personal_sign") return signature;
+        if (method === "eth_call") {
+          expect(params).toEqual([
+            {
+              to: PONS_PRIVACY_ACCOUNT_FACTORY_ROBINHOOD,
+              data: encodeFunctionData({
+                abi: ponsPrivacyAccountFactoryAbi,
+                functionName: "computeAddress",
+                args: [derived.robinhoodExecution.address, 7n],
+              }),
+            },
+            "latest",
+          ]);
+          return encodeFunctionResult({
+            abi: ponsPrivacyAccountFactoryAbi,
+            functionName: "computeAddress",
+            result: predicted,
+          });
+        }
+        throw new Error(`unexpected ${method}`);
+      },
+    );
+    inject({ request });
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "connect" }));
+    await screen.findByText(signer.address);
+    fireEvent.click(screen.getByRole("button", { name: "route" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("route")).toHaveTextContent(predicted),
+    );
+  });
+
+  it("submits only the validated LayerSwap USDG calldata through the controller wallet", async () => {
+    const account = "0x2222222222222222222222222222222222222222";
+    const transactionHash = `0x${"ab".repeat(32)}`;
+    const request = vi.fn(
+      async ({ method }: { method: string; params?: readonly unknown[] }) => {
+        if (method === "eth_requestAccounts") return [account];
+        if (method === "eth_chainId") return "0x1237";
+        if (method === "eth_sendTransaction") return transactionHash;
+        throw new Error(`unexpected ${method}`);
+      },
+    );
+    inject({ request });
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "connect" }));
+    await screen.findByText(account);
+    fireEvent.click(screen.getByRole("button", { name: "deposit-action" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("transaction")).toHaveTextContent(
+        transactionHash,
+      ),
+    );
+    expect(request).toHaveBeenCalledWith({
+      method: "eth_sendTransaction",
+      params: [
+        {
+          from: account,
+          to: "0x3333333333333333333333333333333333333333",
+          data: "0x1234",
+          value: "0x0",
+        },
+      ],
     });
   });
 });

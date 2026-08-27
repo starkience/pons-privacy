@@ -26,6 +26,9 @@ importers:
       '@pons-privacy/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
+      '@pons-privacy/strk20':
+        specifier: workspace:*
+        version: link:../../packages/strk20
       react:
         specifier: ^19.1.1
         version: 19.2.8

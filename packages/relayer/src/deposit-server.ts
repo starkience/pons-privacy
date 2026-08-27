@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
   createServer,
   type IncomingMessage,
@@ -31,6 +30,7 @@ export type LayerswapDepositGateway = Pick<
   | "createFundingSwap"
   | "getSwap"
   | "getFundingSwap"
+  | "getFundingAction"
   | "getDepositActions"
 >;
 
@@ -105,12 +105,13 @@ export function startDepositServer(
           body.destinationAddress,
           "destinationAddress",
         );
+        const operationId = operationReference(body.operationId);
         const createRequest: CreateLayerswapReturnSwap = {
           amountIn,
           sourceAddress,
           destinationAddress,
           refundAddress: sourceAddress,
-          referenceId: randomUUID(),
+          referenceId: operationId,
           useGasless: false,
         };
         const prepared = await layerswap.createReturnSwap(createRequest);
@@ -131,16 +132,18 @@ export function startDepositServer(
           body.destinationAddress,
           "destinationAddress",
         );
+        const operationId = operationReference(body.operationId);
         const prepared = await layerswap.createFundingSwap({
           amountIn,
           sourceAddress,
           destinationAddress,
-          referenceId: randomUUID(),
+          referenceId: operationId,
         });
         return json(response, 201, prepared);
       }
 
-      const fundingMatch = /^\/v1\/funding\/swaps\/([^/]+)$/.exec(url.pathname);
+      const fundingMatch =
+        /^\/v1\/funding\/swaps\/([^/]+)(\/deposit-action)?$/.exec(url.pathname);
       if (request.method === "GET" && fundingMatch) {
         const swapId = decodeURIComponent(fundingMatch[1]!);
         const sourceAddress = starknetAddress(
@@ -149,7 +152,19 @@ export function startDepositServer(
         );
         const swap = await layerswap.getFundingSwap(swapId);
         assertFundingSwapOwner(swap, sourceAddress);
-        return json(response, 200, swap);
+        if (!fundingMatch[2]) return json(response, 200, swap);
+        if (swap.status !== "user_transfer_pending") {
+          throw new HttpError(
+            409,
+            "funding swap no longer accepts a source transfer",
+          );
+        }
+        const action = await layerswap.getFundingAction(
+          swapId,
+          sourceAddress,
+          swap.amountIn,
+        );
+        return json(response, 200, { swap, action });
       }
 
       const match = /^\/v1\/deposits\/swaps\/([^/]+)(\/deposit-actions)?$/.exec(
@@ -164,6 +179,12 @@ export function startDepositServer(
         const swap = await layerswap.getSwap(swapId);
         assertSwapOwner(swap, sourceAddress);
         if (!match[2]) return json(response, 200, swap);
+        if (swap.status !== "user_transfer_pending") {
+          throw new HttpError(
+            409,
+            "deposit swap no longer accepts a source transfer",
+          );
+        }
         const actions = await layerswap.getDepositActions(
           swapId,
           sourceAddress,
@@ -225,6 +246,18 @@ function baseUnits(value: unknown, field: string): bigint {
     throw new HttpError(400, `${field} must be a positive base-unit integer`);
   }
   return BigInt(value);
+}
+
+function operationReference(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  ) {
+    throw new HttpError(400, "operationId must be a UUIDv4");
+  }
+  return value.toLowerCase();
 }
 
 function record(value: unknown, field: string): Record<string, unknown> {

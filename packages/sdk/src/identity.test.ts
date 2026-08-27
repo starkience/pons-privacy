@@ -57,7 +57,7 @@ describe("PrivatePons identity derivation", () => {
     expect(transport1.starknetAddress).not.toBe(transport0.starknetAddress);
   });
 
-  it("derives a complete S1 to S2 to R2 route from one signature", () => {
+  it("derives S1, S2, and the O2 controller from one signature", () => {
     const route = derivePonsPrivacyRoute(SIGNATURE, 7, OZ_CLASS_HASH);
     expect(route.rootIdentity).toEqual(
       derivePonsPrivacyIdentity(SIGNATURE, OZ_CLASS_HASH),

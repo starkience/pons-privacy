@@ -3,7 +3,8 @@
 ## Complete in code
 
 - deployed Robinhood `PonsPrivacyAccountFactory` and fork-tested Pons launch/buy/sell path;
-- deterministic user-controlled S1, S2, viewing-key, and R2 derivation;
+- deterministic user-controlled S1, S2, viewing-key, and O2 derivation plus live factory resolution
+  of counterfactual R2;
 - live LayerSwap quotes and strictly pinned bidirectional swap schemas;
 - STRK20 mature-note selection and hosted proving client;
 - private-paymaster proof submission with a hard S1 outbound prohibition;

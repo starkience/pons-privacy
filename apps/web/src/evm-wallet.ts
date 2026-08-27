@@ -2,13 +2,27 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   derivePonsPrivacyIdentity,
   derivePonsPrivacyRoute,
+  LAYERSWAP_ROBINHOOD_USDG_ADDRESS,
+  PONS_PRIVACY_ACCOUNT_FACTORY_ROBINHOOD,
+  PonsOperationJournal,
   PONS_PRIVACY_IDENTITY_MESSAGE,
+  ponsPrivacyAccountFactoryAbi,
   ROBINHOOD_MAINNET_CHAIN_ID,
   robinhood,
   type DerivedPonsPrivacyIdentity,
-  type DerivedPonsPrivacyRoute,
+  type LayerswapDepositAction,
+  type ResolvedPonsPrivacyRoute,
 } from "@pons-privacy/sdk";
-import { recoverMessageAddress, stringToHex, type Hex } from "viem";
+import {
+  decodeFunctionResult,
+  encodeFunctionData,
+  erc20Abi,
+  getAddress,
+  isAddress,
+  recoverMessageAddress,
+  stringToHex,
+  type Hex,
+} from "viem";
 
 export interface Eip1193Provider {
   request(args: {
@@ -53,7 +67,13 @@ export interface EvmWalletState {
   derivePrivacyRoute(
     accountIndex: number,
     ozAccountClassHash: string,
-  ): Promise<DerivedPonsPrivacyRoute>;
+  ): Promise<ResolvedPonsPrivacyRoute>;
+  openOperationJournal(
+    ozAccountClassHash: string,
+  ): Promise<PonsOperationJournal>;
+  submitDepositActions(
+    actions: readonly LayerswapDepositAction[],
+  ): Promise<readonly Hex[]>;
   disconnect(): void;
   clearError(): void;
 }
@@ -248,7 +268,7 @@ export function useEvmWallet(): EvmWalletState {
     async (
       accountIndex: number,
       ozAccountClassHash: string,
-    ): Promise<DerivedPonsPrivacyRoute> => {
+    ): Promise<ResolvedPonsPrivacyRoute> => {
       await derivePrivacyIdentity(ozAccountClassHash);
       const session = identityRef.current;
       if (
@@ -257,13 +277,118 @@ export function useEvmWallet(): EvmWalletState {
       ) {
         throw new Error("Privacy session changed before route derivation");
       }
-      return derivePonsPrivacyRoute(
+      const route = derivePonsPrivacyRoute(
         session.signature,
         accountIndex,
         ozAccountClassHash,
       );
+      if (!active)
+        throw new Error("Wallet disconnected during route derivation");
+      await ensureRobinhood(active.provider);
+      const callData = encodeFunctionData({
+        abi: ponsPrivacyAccountFactoryAbi,
+        functionName: "computeAddress",
+        args: [route.robinhoodExecution.address, BigInt(accountIndex)],
+      });
+      const raw = await active.provider.request({
+        method: "eth_call",
+        params: [
+          {
+            to: PONS_PRIVACY_ACCOUNT_FACTORY_ROBINHOOD,
+            data: callData,
+          },
+          "latest",
+        ],
+      });
+      if (typeof raw !== "string" || !/^0x[0-9a-fA-F]*$/.test(raw)) {
+        throw new Error("Robinhood factory returned invalid account data");
+      }
+      const predicted = decodeFunctionResult({
+        abi: ponsPrivacyAccountFactoryAbi,
+        functionName: "computeAddress",
+        data: raw as Hex,
+      });
+      if (!isAddress(predicted) || BigInt(predicted) === 0n) {
+        throw new Error("Robinhood factory returned an invalid account");
+      }
+      return {
+        ...route,
+        robinhoodExecutionAccount: getAddress(predicted),
+      };
+    },
+    [account, active, derivePrivacyIdentity],
+  );
+
+  const openOperationJournal = useCallback(
+    async (ozAccountClassHash: string): Promise<PonsOperationJournal> => {
+      await derivePrivacyIdentity(ozAccountClassHash);
+      const session = identityRef.current;
+      if (
+        !session ||
+        session.rootAccount.toLowerCase() !== account?.toLowerCase()
+      ) {
+        throw new Error("Privacy session changed before journal recovery");
+      }
+      return PonsOperationJournal.open(session.signature);
     },
     [account, derivePrivacyIdentity],
+  );
+
+  const submitDepositActions = useCallback(
+    async (
+      actions: readonly LayerswapDepositAction[],
+    ): Promise<readonly Hex[]> => {
+      if (!active || !account) {
+        throw new Error("Connect the source wallet before depositing USDG");
+      }
+      if (actions.length === 0) {
+        throw new Error("LayerSwap returned no deposit actions");
+      }
+      const hashes: Hex[] = [];
+      for (const [index, action] of [...actions]
+        .sort((left, right) => left.order - right.order)
+        .entries()) {
+        if (
+          action.order !== index ||
+          action.network !== "ROBINHOOD_MAINNET" ||
+          action.token !== "USDG" ||
+          action.tokenAddress.toLowerCase() !==
+            LAYERSWAP_ROBINHOOD_USDG_ADDRESS.toLowerCase()
+        ) {
+          throw new Error("LayerSwap action changed the pinned USDG route");
+        }
+        if (action.type === "sign") {
+          throw new Error("LayerSwap gasless signing has not been allowlisted");
+        }
+        const data =
+          action.callData ??
+          encodeFunctionData({
+            abi: erc20Abi,
+            functionName: "transfer",
+            args: [action.toAddress, action.amount],
+          });
+        const submitted = await active.provider.request({
+          method: "eth_sendTransaction",
+          params: [
+            {
+              from: account,
+              to: action.callData ? action.toAddress : action.tokenAddress,
+              data,
+              value: "0x0",
+            },
+          ],
+        });
+        if (
+          typeof submitted !== "string" ||
+          !/^0x[0-9a-fA-F]{64}$/.test(submitted)
+        ) {
+          throw new Error("The wallet returned an invalid transaction hash");
+        }
+        hashes.push(submitted as Hex);
+      }
+      return hashes;
+    },
+    [account, active],
   );
 
   const disconnect = useCallback(() => {
@@ -284,6 +409,8 @@ export function useEvmWallet(): EvmWalletState {
     connect,
     derivePrivacyIdentity,
     derivePrivacyRoute,
+    openOperationJournal,
+    submitDepositActions,
     disconnect,
     clearError: () => setError(undefined),
   };

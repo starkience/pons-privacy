@@ -3,7 +3,8 @@
 Frontend-first private-balance and launch flow for Pons V2 on Robinhood Chain. Users connect an
 injected EVM wallet such as MetaMask, Phantom, or Robinhood Wallet. No Starknet wallet is required.
 One fixed non-transaction signature derives the user's S1, viewing key, fresh S2 transport
-accounts, and fresh Robinhood owners locally; derived secrets remain in browser memory.
+accounts, and fresh Robinhood owners locally. A read-only factory call resolves the counterfactual
+R2 `PonsPrivacyAccount`, which is the bridge destination; derived secrets remain in browser memory.
 
 ## Local development
 
@@ -28,9 +29,16 @@ Robinhood USDG → Starknet USDC → STRK20
 
 The browser does not call LayerSwap or AVNU directly and never receives either partner key. The
 backend implements pinned creation, status, strict action parsing, and a narrow paymaster proxy.
-Inbound and outbound mainnet creation have separate disabled-by-default gates. Until the funded
-route proof is complete, the deposit modal stops after quote review and local privacy-account
-creation.
+Inbound and outbound mainnet creation have separate disabled-by-default gates. The privacy rail has
+two explicit tabs: “Make private” for Robinhood USDG → S1 → STRK20, and “Fund launcher” for private
+USDC → fresh S2 → fresh R2. It persists a signature-keyed AES-GCM operation journal and can re-fetch
+strictly validated actions for pending LayerSwap orders after a reload. Local storage never receives
+the signature, derived keys, viewing key, proof, witness, or clear-text S1/S2/R2 route record.
+
+The outbound runner is wired to the STRK20 withdrawal and sponsored S2 transfer primitives but
+requires an explicit public USDC fee cap. The inbound value-movement button stays locked until the
+AVNU `invoke_and_apply_action` shield allowlist is frozen; quoting and encrypted route preparation
+are available now.
 
 ## Application API
 

@@ -417,6 +417,27 @@ export class LayerswapClient extends LayerswapQuoteClient {
     );
   }
 
+  async getFundingAction(
+    swapId: string,
+    sourceAddress: string,
+    expectedAmount: bigint,
+  ): Promise<LayerswapFundingAction> {
+    const id = swapIdentifier(swapId);
+    const source = starknetAddress(sourceAddress, "sourceAddress");
+    if (expectedAmount <= 0n) {
+      throw new Error("LayerSwap expected amount must be positive");
+    }
+    const query = new URLSearchParams({ source_address: source });
+    const payload = await this.request(
+      `/swaps/${encodeURIComponent(id)}/deposit_actions?${query}`,
+      { method: "GET", headers: this.authenticatedHeaders() },
+    );
+    const actionData = Array.isArray(payload.data)
+      ? payload.data
+      : record(payload.data, "data").value;
+    return parseFundingAction(actionData, expectedAmount);
+  }
+
   async getDepositActions(
     swapId: string,
     sourceAddress: Address,

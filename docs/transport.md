@@ -39,8 +39,12 @@ Extra calls, token substitution, amount changes, managed deposit addresses, or r
 closed. There is no direct execution fallback.
 
 Provider delivery and STRK20 note completion are different durable states. Persist an operation
-before funds move, independently reconcile both chains, and resume refunds/shielding without
-creating duplicate orders.
+before funds move and independently reconcile both chains. The browser now stores its recovery
+state in an AES-GCM journal keyed by the user's deterministic signature. It persists ciphertext
+only and can re-fetch validated deposit actions for an owned pending order after a reload. The
+operation UUID is also the LayerSwap reference ID, but production still needs a durable backend
+lookup by that reference before reissuing a create request; the browser cannot close the crash
+window between provider creation and receiving the swap ID by itself.
 
 ## Mainnet release gate
 

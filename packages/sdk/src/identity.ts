@@ -40,6 +40,12 @@ export interface DerivedPonsPrivacyRoute {
   readonly robinhoodExecution: DerivedRobinhoodExecutionAccount;
 }
 
+/** A route whose deployed factory has resolved the counterfactual Pons account. */
+export interface ResolvedPonsPrivacyRoute extends DerivedPonsPrivacyRoute {
+  /** Fund this account, not the derived owner EOA. */
+  readonly robinhoodExecutionAccount: Address;
+}
+
 export function createPonsPrivacyIdentityMessage(appId: string): string {
   if (!/^[a-z0-9][a-z0-9.-]{0,62}$/.test(appId)) {
     throw new Error(

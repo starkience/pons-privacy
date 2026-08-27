@@ -292,6 +292,35 @@ describe("authenticated LayerSwap client", () => {
     ).rejects.toThrow(/exactly one Starknet call/);
   });
 
+  it("re-fetches the exact funding action so an S2 exit can resume", async () => {
+    const recipient = "0x123";
+    const fetchMock = vi.fn(async (url: string) => {
+      expect(url).toContain(`/swaps/${REFERENCE_ID}/deposit_actions`);
+      expect(url).toContain(
+        `source_address=${encodeURIComponent(DESTINATION)}`,
+      );
+      const prepared = await fundingPreparedSwap(recipient);
+      const payload = (await prepared.json()) as {
+        data: { deposit_actions: unknown };
+      };
+      return new Response(
+        JSON.stringify({ data: { value: payload.data.deposit_actions } }),
+      );
+    });
+    const client = new LayerswapClient({
+      baseUrl: "https://layerswap.example/api/v2",
+      apiKey: "partner-key",
+      fetch: fetchMock,
+    });
+    await expect(
+      client.getFundingAction(REFERENCE_ID, DESTINATION, 10n * USDC),
+    ).resolves.toMatchObject({
+      recipient,
+      amount: 10n * USDC,
+      call: { entrypoint: "transfer" },
+    });
+  });
+
   it("creates only the pinned Robinhood USDG to Starknet USDC swap", async () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       expect(new Headers(init?.headers).get("X-LS-APIKEY")).toBe("partner-key");

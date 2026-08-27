@@ -8,7 +8,7 @@
 | `PonsPrivacyAccountFactory` | Robinhood mainnet               | deployed                                  |
 | Pons policy relayer         | offchain                        | not deployed                              |
 | Web/application backend     | offchain                        | local prototype                           |
-| STRK20 RC.4 pool            | Starknet mainnet                | existing external deployment              |
+| STRK20 privacy pool         | Starknet mainnet                | external; live class mismatch blocks use  |
 | Hosted prover/discovery     | Starknet mainnet                | existing external services                |
 | User S1/S2 accounts         | Starknet mainnet                | counterfactual; deploy per user/operation |
 | Cairo transport helper      | Starknet                        | not required or deployed                  |
@@ -36,9 +36,17 @@ Server-only secrets:
 - policy-relayer key and credential when that service is deployed.
 
 Required public configuration includes the verified mainnet OpenZeppelin account class hash in
-`OZ_ACCOUNT_CLASS_HASH_MAINNET` and `VITE_OZ_ACCOUNT_CLASS_HASH_MAINNET`. The hash must identify a
-declared mainnet class compatible with constructor calldata `[publicKey]`, salt `publicKey`, and
-Cairo version 1.
+`OZ_ACCOUNT_CLASS_HASH_MAINNET` and `VITE_OZ_ACCOUNT_CLASS_HASH_MAINNET`:
+
+```text
+0x01d1777db36cdd06dd62cfde77b1b6ae06412af95d57a13dc40ac77b8a702381
+```
+
+This is OpenZeppelin Contracts for Cairo 3.x `AccountUpgradeable`: Stark-curve signatures, one
+felt `public_key` constructor value, counterfactual deployment, and SRC9 outside execution. Its
+class definition was independently retrieved from Starknet mainnet on 2026-08-27. The similarly
+named `EthAccountUpgradeable` uses secp256k1 coordinates and is not compatible with this
+derivation.
 
 Run the pinned STRK20 preflight before a funded test:
 
@@ -49,6 +57,22 @@ STARKNET_RPC_URL='https://...redacted...' pnpm preflight:strk20
 
 It verifies SN_MAIN, RPC head/spec, pool class, prover/discovery health, lag, and OHTTP pins.
 
+### Current STRK20 activation blocker
+
+The preflight intentionally fails as of 2026-08-27:
+
+- configured pool: `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a`;
+- supplied/pinned class: `0x030b8c540cf04d8ef0f4db2a9098d9cc0e35e83af1cb3325f5a4f40144b4b30b`;
+- live class returned independently by Starknet mainnet:
+  `0x67dddd89d80fedadc06b6f160798f94800a4a70164e5a24301cd0d6076b554d`.
+
+StarkWare's official `CONTRACT_V1_DEPLOYED_MAINNET_2026-04-20` tag identifies the supplied hash as
+the V1 privacy pool. Its `CONTRACT_V2_DEPLOYED_MAINNET_2026-07-08` tag publishes yet another pool
+class hash, `0x052107fadffab71bdcbb6b2ccb68ba3e1b5558d94036538053e159d3076ad633`.
+The live value must not be copied into the manifest without an authoritative compatibility set for
+the SDK, prover, discovery service, OHTTP key, and deployed pool. All funded STRK20 execution gates
+remain false until that set is confirmed and the preflight passes unchanged.
+
 ## Local services
 
 ```sh
@@ -56,9 +80,10 @@ pnpm dev:deposit-api
 pnpm dev:web
 ```
 
-The LayerSwap server binds to loopback by default. Production must use TLS, authentication,
-rate-limits, and an operation journal. The AVNU proxy allowlists only the four paymaster methods and
-must never log request/response bodies.
+The LayerSwap server binds to loopback by default. Production must use TLS, authentication, and
+rate-limits. The browser operation journal is encrypted under the deterministic wallet signature;
+production still needs server-side reconciliation and monitoring. The AVNU proxy allowlists only
+the four paymaster methods and must never log request/response bodies.
 
 ## Kill switches
 
@@ -67,6 +92,7 @@ Keep these false until the funded round-trip gate passes:
 ```text
 LAYERSWAP_SWAP_CREATION_ENABLED=false
 LAYERSWAP_OUTBOUND_SWAP_CREATION_ENABLED=false
+VITE_MAINNET_PRIVACY_EXECUTION_ENABLED=false
 VITE_MAINNET_LAUNCH_ENABLED=false
 BROADCAST=false
 ```

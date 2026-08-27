@@ -127,6 +127,20 @@ async function harness(
     })),
     getSwap: vi.fn(async () => swap),
     getFundingSwap: vi.fn(async () => fundingSwap),
+    getFundingAction: vi.fn(async () => ({
+      type: "transfer" as const,
+      order: 0,
+      network: "STARKNET_MAINNET" as const,
+      token: "USDC" as const,
+      tokenAddress: "0xabc",
+      amount: 10_000_000n,
+      recipient: "0x987",
+      call: {
+        contractAddress: "0xabc",
+        entrypoint: "transfer" as const,
+        calldata: ["0x987", "10000000", "0"] as const,
+      },
+    })),
     getDepositActions: vi.fn(async () => actions),
   };
   const server = startDepositServer(gateway, 0, {
@@ -175,6 +189,7 @@ describe("LayerSwap deposit API", () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
+        operationId: SWAP_ID,
         amount: "10000000",
         sourceAddress: SOURCE,
         destinationAddress: `0x${BigInt(DESTINATION).toString(16)}`,
@@ -188,6 +203,7 @@ describe("LayerSwap deposit API", () => {
         refundAddress: SOURCE,
         destinationAddress: `0x${BigInt(DESTINATION).toString(16)}`,
         useGasless: false,
+        referenceId: SWAP_ID,
       }),
     );
   });
@@ -198,6 +214,7 @@ describe("LayerSwap deposit API", () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
+        operationId: SWAP_ID,
         amount: "10000000",
         sourceAddress: TRANSPORT,
         destinationAddress: ROBINHOOD_DESTINATION,
@@ -209,6 +226,7 @@ describe("LayerSwap deposit API", () => {
         amountIn: 10_000_000n,
         sourceAddress: TRANSPORT,
         destinationAddress: ROBINHOOD_DESTINATION,
+        referenceId: SWAP_ID,
       }),
     );
   });
@@ -221,5 +239,21 @@ describe("LayerSwap deposit API", () => {
     );
     expect(response.status).toBe(404);
     expect(gateway.getDepositActions).not.toHaveBeenCalled();
+  });
+
+  it("recovers the validated S2 funding action for an owned pending swap", async () => {
+    const { gateway, url } = await harness();
+    const response = await fetch(
+      `${url}/v1/funding/swaps/${SWAP_ID}/deposit-action?sourceAddress=${TRANSPORT}`,
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      action: { token: "USDC", recipient: "0x987", amount: "10000000" },
+    });
+    expect(gateway.getFundingAction).toHaveBeenCalledWith(
+      SWAP_ID,
+      TRANSPORT,
+      10_000_000n,
+    );
   });
 });
