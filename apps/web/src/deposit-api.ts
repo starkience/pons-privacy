@@ -16,6 +16,8 @@ export interface PrivacySwapStatus {
   readonly destinationAddress: string;
   readonly inputTransactionHash?: string;
   readonly outputTransactionHash?: string;
+  /** Actual destination-chain base units from LayerSwap's output transaction. */
+  readonly outputAmount?: bigint;
   readonly failReason?: string;
 }
 
@@ -329,6 +331,15 @@ function parseSwap(
   };
   const inputTransactionHash = transactionHash("input");
   const outputTransactionHash = transactionHash("output");
+  const outputTransaction = transactions.find(
+    (candidate) => record(candidate, "transaction").type === "output",
+  );
+  const outputAmount = outputTransaction
+    ? bigint(
+        record(outputTransaction, "output transaction").amount,
+        "output transaction amount",
+      )
+    : undefined;
   const failReason =
     typeof value.failReason === "string" && value.failReason
       ? value.failReason
@@ -341,6 +352,7 @@ function parseSwap(
     destinationAddress,
     ...(inputTransactionHash ? { inputTransactionHash } : {}),
     ...(outputTransactionHash ? { outputTransactionHash } : {}),
+    ...(outputAmount !== undefined ? { outputAmount } : {}),
     ...(failReason ? { failReason } : {}),
   };
 }

@@ -8,7 +8,7 @@ import {
   type PrivateTransfersInterface,
   type Warning,
 } from "@starkware-libs/starknet-privacy-sdk";
-import { Account, RpcProvider, constants } from "starknet";
+import { Account, RpcProvider, constants, ec, type Call } from "starknet";
 import { requireStarknetAddress, type Strk20NetworkConfig } from "./config.js";
 import { STRK20_MAINNET } from "./constants.js";
 import {
@@ -41,6 +41,30 @@ export interface UserStrk20WithdrawalResult {
   readonly warnings: readonly Warning[];
 }
 
+export interface UserStrk20DepositRequest {
+  /** Actual USDC output reported by LayerSwap's completed output transaction. */
+  readonly amount: bigint;
+  readonly fundingTransactionHash: string;
+  /** Fresh S1 deploy block, when deployment happened in this operation. */
+  readonly deploymentBlockNumber?: number;
+  /** Reconcile this exact hash before any possible re-submit. */
+  readonly previousTransactionHash?: string;
+  readonly onRelayStart?: () => void | Promise<void>;
+  readonly onTransactionHash?: (hash: string) => void | Promise<void>;
+}
+
+export interface UserStrk20DepositResult {
+  readonly transactionHash: string;
+  readonly blockNumber: number;
+  readonly token: string;
+  readonly amount: bigint;
+  readonly privateAmount?: bigint;
+  readonly provingBlockNumber?: number;
+  readonly poolFee?: bigint;
+  readonly recovered: boolean;
+  readonly warnings: readonly Warning[];
+}
+
 export interface MatureNoteSelection {
   readonly selected: readonly Note[];
   readonly selectedAmount: bigint;
@@ -58,6 +82,7 @@ export class UserStrk20Session {
     private readonly paymaster: PrivatePaymasterGateway,
     private readonly poolAddress: string,
     private readonly usdcAddress: string,
+    private readonly viewingKey: bigint,
     private readonly maxPrivatePaymasterFee: bigint,
   ) {}
 
@@ -70,6 +95,217 @@ export class UserStrk20Session {
       () => undefined,
     );
     return result;
+  }
+
+  depositFromPublicBalance(
+    request: UserStrk20DepositRequest,
+  ): Promise<UserStrk20DepositResult> {
+    const result = this.queue.then(() => this.depositExclusive(request));
+    this.queue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  private async depositExclusive(
+    request: UserStrk20DepositRequest,
+  ): Promise<UserStrk20DepositResult> {
+    if (request.amount <= 0n) {
+      throw new Error("STRK20 deposit amount must be positive");
+    }
+
+    if (request.previousTransactionHash) {
+      const prior = await this.provider.waitForTransaction(
+        request.previousTransactionHash,
+      );
+      if (prior.isSuccess()) {
+        if (prior.block_number === undefined) {
+          throw new Error(
+            "recovered STRK20 deposit receipt has no block number",
+          );
+        }
+        return {
+          transactionHash: request.previousTransactionHash,
+          blockNumber: prior.block_number,
+          token: this.usdcAddress,
+          amount: request.amount,
+          recovered: true,
+          warnings: [],
+        };
+      }
+      this.transfers.invalidateProofNonceCache();
+    }
+
+    const fundingReceipt = await this.provider.waitForTransaction(
+      request.fundingTransactionHash,
+    );
+    if (!fundingReceipt.isSuccess()) {
+      throw new Error("LayerSwap Starknet output transaction did not succeed");
+    }
+    if (fundingReceipt.block_number === undefined) {
+      throw new Error("LayerSwap output receipt has no block number");
+    }
+
+    const balance = await this.readPublicUsdcBalance();
+    if (balance < request.amount) {
+      throw new Error(
+        "S1 USDC balance is below LayerSwap's completed output amount",
+      );
+    }
+
+    const autoRegister = await this.shouldAutoRegister();
+    const approveCall = this.depositApproveCall(request.amount);
+    const paymasterBuild = await this.paymaster.buildInvokeAndPoolAction(
+      this.poolAddress,
+      this.usdcAddress,
+      this.account.address,
+      [approveCall],
+    );
+    const fee = paymasterBuild.feeAction;
+    if (fee && BigInt(fee.token) !== BigInt(this.usdcAddress)) {
+      throw new Error(
+        "private paymaster fee must use the configured USDC token",
+      );
+    }
+    const poolFee = fee?.amount ?? 0n;
+    if (poolFee > this.maxPrivatePaymasterFee) {
+      throw new Error("private paymaster fee exceeds the configured maximum");
+    }
+    if (poolFee >= request.amount) {
+      throw new Error("STRK20 deposit amount does not cover the private fee");
+    }
+
+    const dependencyBlock = Math.max(
+      fundingReceipt.block_number,
+      request.deploymentBlockNumber ?? 0,
+    );
+    const provingBlockNumber = await waitForSettledProvingBlock(
+      this.provider,
+      dependencyBlock,
+    );
+    const builder = this.transfers
+      .build({
+        autoRegister,
+        autoSetup: true,
+        autoDiscover: { notes: "refresh", channels: "refresh" },
+        autoSelectNotes: "naive",
+        provingBlockId: provingBlockNumber,
+      })
+      .surplusTo(this.account.address)
+      .with(this.usdcAddress, (token) => {
+        if (fee && fee.amount > 0n) {
+          token.deposit({ amount: request.amount });
+          token.withdraw({ recipient: fee.recipient, amount: fee.amount });
+        } else {
+          token.deposit({
+            amount: request.amount,
+            recipient: this.account.address,
+          });
+        }
+      });
+    const invocation = await builder.createProofInvocation();
+    const execution = await this.transfers.executeWithInvocation(
+      invocation,
+      provingBlockNumber,
+    );
+    const proof = execution.callAndProof.proof;
+    let relayStarted = false;
+    let submitted;
+    try {
+      submitted = await this.paymaster.executeInvokeAndPoolAction({
+        poolAddress: this.poolAddress,
+        call: execution.callAndProof.call as unknown as Call,
+        proof: proof.data,
+        proofFacts: proof.proofFacts ?? [],
+        build: paymasterBuild,
+        account: this.account,
+        onRelayStart: async () => {
+          relayStarted = true;
+          await request.onRelayStart?.();
+        },
+      });
+    } catch (error) {
+      if (!relayStarted) this.transfers.invalidateProofNonceCache();
+      if (relayStarted) {
+        throw new Error(
+          "STRK20 deposit relay outcome is unknown; do not resubmit until reconciled",
+          { cause: error },
+        );
+      }
+      throw error;
+    }
+    await request.onTransactionHash?.(submitted.transactionHash);
+    const receipt = await this.provider.waitForTransaction(
+      submitted.transactionHash,
+    );
+    if (!receipt.isSuccess()) {
+      this.transfers.invalidateProofNonceCache();
+      throw new Error(`STRK20 deposit reverted: ${submitted.transactionHash}`);
+    }
+    if (receipt.block_number === undefined) {
+      throw new Error("STRK20 deposit receipt has no block number");
+    }
+    return {
+      transactionHash: submitted.transactionHash,
+      blockNumber: receipt.block_number,
+      token: this.usdcAddress,
+      amount: request.amount,
+      privateAmount: request.amount - poolFee,
+      provingBlockNumber,
+      poolFee,
+      recovered: false,
+      warnings: execution.warnings,
+    };
+  }
+
+  private async readPublicUsdcBalance(): Promise<bigint> {
+    const [low, high] = await this.provider.callContract(
+      {
+        contractAddress: this.usdcAddress,
+        entrypoint: "balance_of",
+        calldata: [this.account.address],
+      },
+      "latest",
+    );
+    if (low === undefined || high === undefined) {
+      throw new Error("USDC balance_of returned an unexpected value");
+    }
+    return BigInt(low) + (BigInt(high) << 128n);
+  }
+
+  private async shouldAutoRegister(): Promise<boolean> {
+    const [registeredKey] = await this.provider.callContract(
+      {
+        contractAddress: this.poolAddress,
+        entrypoint: "get_public_key",
+        calldata: [this.account.address],
+      },
+      "latest",
+    );
+    if (registeredKey === undefined) {
+      throw new Error("STRK20 registration check returned no public key");
+    }
+    if (BigInt(registeredKey) === 0n) return true;
+    const expectedKey = BigInt(
+      ec.starkCurve.getStarkKey(`0x${this.viewingKey.toString(16)}`),
+    );
+    if (BigInt(registeredKey) !== expectedKey) {
+      throw new Error(
+        "S1 is already registered with a different immutable viewing key",
+      );
+    }
+    return false;
+  }
+
+  private depositApproveCall(amount: bigint): Call {
+    const low = amount & ((1n << 128n) - 1n);
+    const high = amount >> 128n;
+    return {
+      contractAddress: this.usdcAddress,
+      entrypoint: "approve",
+      calldata: [this.poolAddress, low.toString(), high.toString()],
+    };
   }
 
   private async withdrawExclusive(
@@ -229,6 +465,7 @@ export function createUserStrk20Session(
     new AvnuPrivatePaymasterGateway(config.privatePaymasterUrl),
     requireStarknetAddress(config.poolAddress, "poolAddress"),
     requireStarknetAddress(config.usdcAddress, "usdcAddress"),
+    identity.viewingKey,
     config.maxPrivatePaymasterFee,
   );
 }
@@ -259,4 +496,23 @@ export function selectMatureNotes(
     if (selectedAmount >= amount) break;
   }
   return { selected, selectedAmount, privateBalance, matureBalance };
+}
+
+async function waitForSettledProvingBlock(
+  provider: Pick<RpcProvider, "getBlockNumber">,
+  dependencyBlock: number,
+): Promise<number> {
+  if (!Number.isSafeInteger(dependencyBlock) || dependencyBlock < 0) {
+    throw new Error("proving dependency block must be a non-negative integer");
+  }
+  const deadline = Date.now() + 5 * 60_000;
+  while (true) {
+    const currentBlock = await provider.getBlockNumber();
+    const provingBlock = currentBlock - STRK20_MAINNET.provingDepthBlocks;
+    if (provingBlock >= dependencyBlock) return provingBlock;
+    if (Date.now() >= deadline) {
+      throw new Error("timed out waiting for a settled STRK20 proving block");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
 }

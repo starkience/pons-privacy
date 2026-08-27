@@ -57,6 +57,14 @@ window, pinned OHTTP keys, real encrypted prover/discovery calls, and AVNU `spon
 support. Mainnet execution remains fail-closed only until a minimum-value funded round trip and
 independent review pass; compatibility is no longer the blocker.
 
+The inbound runner is also complete. After LayerSwap reports its actual Starknet output amount,
+the browser reconciles that output transaction, deploys S1 through sponsored SNIP-29 when needed,
+waits for a settled proving base, and asks the hosted prover for a screened deposit proof. AVNU
+then relays one guarded `invoke_and_apply_action`: S1 signs only the exact USDC approval while the
+proof atomically registers the immutable viewing key, opens the channel, deposits USDC, and pays
+the capped private fee. Deployment, relay-start, and deposit hashes are written to the encrypted
+journal before later waits, preventing blind duplicate submissions after reconnects.
+
 The outbound invariant is enforced in code: S1 cannot be the public bridge source. The hosted
 prover builds a private withdrawal to S2, AVNU's private paymaster submits the proof, and S2 then
 executes LayerSwap's exact one-call USDC action through the standard paymaster. LayerSwap refunds
@@ -75,14 +83,15 @@ O2 key. The application backend independently checks the funded factory-derived 
 metadata, live Pons economics, signature, nonce policy, and idempotency record before forwarding to
 the internal Pons relayer. It never receives the identity signature, O2 private key, viewing key,
 proof, or partner credentials. Mainnet deposit, outbound funding, and launch submission remain
-disabled by separate kill switches. No token has been launched from this repository.
+disabled by separate production kill switches. The local privacy rails can be enabled for the
+controlled minimum-value test without enabling launch broadcast. No token has been launched from
+this repository.
 
 LayerSwap is the selected transport. The backend adapter pins both USDG/USDC directions, protects
 the partner credential, and strictly parses limits, quotes, swap creation, status, transactions,
 and deposit actions. A read-only same-origin Starknet proxy also keeps the Alchemy credential out
-of the browser bundle. Mainnet creation and transfer signing remain locked until bidirectional
-small-value tests prove contract senders, arbitrary recipients, fees, expiry, refunds,
-interruption recovery, and exact delivery.
+of the browser bundle. The next gate is a user-confirmed minimum-value round trip proving contract
+senders, arbitrary recipients, fees, expiry, refunds, interruption recovery, and exact delivery.
 
 ## Repository
 

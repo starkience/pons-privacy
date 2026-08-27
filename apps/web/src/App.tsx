@@ -765,6 +765,8 @@ export function App({
           onSubmitDepositActions={wallet.submitDepositActions}
           {...(privacyExecutionRunner
             ? {
+                onQuotePrivateFee: privacyExecutionRunner.quotePrivateFee,
+                onShieldDeposit: privacyExecutionRunner.shieldDeposit,
                 onWithdrawToTransport:
                   privacyExecutionRunner.withdrawToTransport,
                 onSubmitFundingAction:

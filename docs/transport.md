@@ -48,6 +48,11 @@ response or restart. It will not blindly reissue a create call while reconciliat
 The local file store is for a single instance; production replicas require transactional shared
 storage, provider/webhook monitoring, and independent onchain balance/transaction reconciliation.
 
+For inbound delivery, the backend exposes LayerSwap's completed output transaction hash and actual
+output amount. The browser verifies that transaction on Starknet and deposits exactly that amount.
+The encrypted journal records S1 deployment, private-relay start, and the returned deposit hash;
+an operation with an ambiguous relay start and no hash is deliberately not auto-resubmitted.
+
 ## Mainnet release gate
 
 Before setting either LayerSwap kill switch to true:

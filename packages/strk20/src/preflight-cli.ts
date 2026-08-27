@@ -18,6 +18,11 @@ async function main(): Promise<void> {
       process.env.AVNU_PAYMASTER_URL ?? "https://starknet.paymaster.avnu.fi",
       apiKey,
       maximumFeeAmount,
+      required(
+        process.env.STRK20_PAYMASTER_PROBE_ACCOUNT,
+        "STRK20_PAYMASTER_PROBE_ACCOUNT",
+      ),
+      fetch,
     ),
   ]);
   process.stdout.write(

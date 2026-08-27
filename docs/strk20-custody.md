@@ -31,6 +31,19 @@ S1 private notes
 The implementation rejects S2 equal to S1, stops on `USER_LINKAGE`, and has no direct S1 execution
 fallback. S2 and R2 are public at the exit edge; amount/timing and provider correlation remain.
 
+## Inbound shielding
+
+```text
+R1 LayerSwap output → counterfactual S1 → sponsored S1 deploy
+  → settled proof base → screened STRK20 register/deposit proof
+  → guarded approve + invoke_and_apply_action → private USDC note
+```
+
+S1 signs the AVNU outside-execution typed data in browser memory. The client compares every typed
+call against its one intended USDC approval before signing. AVNU is the public submitter, the
+proving service supplies the mandatory screening attestation, and the deposited amount is the
+actual LayerSwap output rather than the requested source amount.
+
 ## Required configuration and blockers
 
 Public pool/service pins live in `deployments/strk20-mainnet.json`. The Starknet RPC provider key,
@@ -47,9 +60,9 @@ The privacy-pool mismatch was traced through mainnet history rather than bypasse
 `11632886`, the pool proxy registered and replaced its V1 implementation with current class
 `0x67dddd89d80fedadc06b6f160798f94800a4a70164e5a24301cd0d6076b554d`. It reports version `2.0`,
 the screening ABI and pinned screener key. The preflight verifies those views, the proof-validity
-window, actual encrypted prover/discovery requests, and AVNU `sponsored_private` support beneath
-the configured 0.50 USDC fee ceiling. Compatibility now passes; the minimum-value funded round
-trip and independent review still block every production switch.
+window, actual encrypted prover/discovery requests, AVNU's atomic deposit shape, sponsored S1
+deployment, and `sponsored_private` fees beneath the configured 0.50 USDC ceiling. Compatibility
+now passes; the minimum-value funded round trip and independent review still block production.
 
 Before real value: perform a minimum-size round trip, test expiry/refunds/restarts, add rate limits,
 independently audit derivation, encrypted-journal and paymaster code, and review all logs for

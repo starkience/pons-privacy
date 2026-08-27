@@ -116,6 +116,40 @@ describe("encrypted privacy operation journal", () => {
     expect(cleared.lastError).toBeUndefined();
   });
 
+  it("persists the exact inbound amount and relay recovery boundary encrypted", async () => {
+    const storage = new MemoryStorage();
+    const journal = await PonsOperationJournal.open(SIGNATURE, { storage });
+    const created = await journal.create({
+      direction: "deposit",
+      accountIndex: 5,
+      amount: 10_000_000n,
+      rootStarknetAddress: S1,
+    });
+    await journal.advance(created.id, "quote-ready");
+    await journal.advance(created.id, "swap-created", { swapId: "swap-5" });
+    await journal.advance(created.id, "source-submitted");
+    await journal.advance(created.id, "bridged-to-starknet", {
+      destinationAmount: "9630000",
+      destinationTxHash: "0xfunding",
+    });
+    await journal.advance(created.id, "shielding", {
+      accountDeploymentTxHash: "0xdeploy",
+      privateRelayStartedAt: 1234,
+      privateTxHash: "0xprivate",
+    });
+    await expect(journal.list()).resolves.toMatchObject([
+      {
+        destinationAmount: "9630000",
+        accountDeploymentTxHash: "0xdeploy",
+        privateRelayStartedAt: 1234,
+        privateTxHash: "0xprivate",
+      },
+    ]);
+    const persisted = [...storage.values.values()].join(" ");
+    expect(persisted).not.toContain("9630000");
+    expect(persisted).not.toContain("0xprivate");
+  });
+
   it("does not persist opaque provider payloads as recovery errors", async () => {
     const storage = new MemoryStorage();
     const journal = await PonsOperationJournal.open(SIGNATURE, { storage });

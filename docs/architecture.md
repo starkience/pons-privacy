@@ -39,11 +39,20 @@ computation; AVNU submits the proved action and pays Starknet gas.
 connected Robinhood wallet R1
   → LayerSwap USDG order
   → user-derived Starknet account S1 receives USDC
-  → Privacy SDK shields USDC into S1's private notes
+  → AVNU sponsors S1 deployment when counterfactual
+  → Privacy SDK obtains screening and proves register + deposit
+  → AVNU atomically relays S1 approve + STRK20 apply_action
+  → private USDC note (matures after 10 blocks)
 ```
 
 R1 and S1 are intentionally linked at this entry edge. LayerSwap and public observers can see the
 deposit amount and timing. The privacy gain begins after notes rest/mix inside STRK20.
+
+The runner deposits LayerSwap's actual output-transaction amount, not the requested input or all
+USDC at S1. It verifies the public balance, immutable registered viewing key, USDC fee token and
+fee ceiling, exact paymaster typed-data approval call, and a proof base at least ten blocks after
+both funding and deployment. The prover supplies the protocol-required screening attestation;
+missing or rejected screening fails closed.
 
 ## Private exit: STRK20 → S2 → R2
 

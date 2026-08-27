@@ -54,8 +54,10 @@ Run the pinned STRK20 preflight before a funded test:
 pnpm preflight:strk20
 ```
 
-It verifies SN_MAIN, the live V2 pool invariants, real pinned-OHTTP prover/discovery traffic, and
-AVNU private-paymaster support under the configured USDC fee ceiling.
+It verifies SN_MAIN, the live V2 pool invariants, real pinned-OHTTP prover/discovery traffic,
+AVNU's atomic approve/private-deposit build, sponsored counterfactual S1 deployment, and the
+private fee under the configured USDC ceiling. `STRK20_PAYMASTER_PROBE_ACCOUNT` must name any
+deployed mainnet SNIP-9 account; it is used only for the build-only atomic-deposit check.
 
 ### STRK20 compatibility resolution
 
@@ -74,12 +76,13 @@ The transaction registers, adds, and replaces the implementation. The new ABI an
 version match StarkWare's screening-capable V2 contract surface. SDK RC.4 is after the screening-only
 RC.3 change and uses the builder API exercised here. The live preflight additionally proves both
 OHTTP pins by making encrypted requests: prover spec `0.10.3-rc.2` and discovery lag below 120
-seconds. AVNU accepts the same pool and USDC token in `sponsored_private` mode; on 2026-08-27 its
-dynamic fee action was below the configured `500000` base-unit (0.50 USDC) ceiling.
+seconds. AVNU accepts the same pool and USDC token in `sponsored_private` mode, the guarded
+`invoke_and_apply_action` deposit shape, and sponsored S1 deployment; on 2026-08-27 its live atomic
+deposit fee was `188251` base units (0.188251 USDC), below the configured 0.50 USDC ceiling.
 
-This resolves the compatibility and AVNU-support blockers. Funded switches remain false because a
-minimum-value shield, private withdrawal, LayerSwap delivery/refund, and re-shield must still be
-reconciled before real launches.
+This resolves the compatibility, inbound-runner, and AVNU-support blockers. A minimum-value shield,
+private withdrawal, LayerSwap delivery/refund, and re-shield must still be reconciled before real
+launches.
 
 ## Local services
 
@@ -113,6 +116,10 @@ BROADCAST=false
 
 Frontend flags are presentation gates, not authorization boundaries; the backend flags and policy
 relayer remain authoritative.
+
+For the controlled local minimum-value test only, the two LayerSwap switches and
+`VITE_MAINNET_PRIVACY_EXECUTION_ENABLED` may be enabled while every launch/broadcast switch stays
+false. The user still reviews and signs the Robinhood source action in the connected EVM wallet.
 
 ## Mainnet release gate
 

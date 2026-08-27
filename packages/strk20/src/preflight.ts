@@ -35,6 +35,8 @@ export type Strk20OhttpProbe = (
 
 export interface Strk20PrivatePaymasterPreflightResult {
   readonly mode: "sponsored_private";
+  readonly atomicDepositSupported: true;
+  readonly sponsoredAccountDeploymentSupported: true;
   readonly feeToken: string;
   readonly feeRecipient: string;
   readonly feeAmount: string;
@@ -199,21 +201,38 @@ export async function preflightStrk20PrivatePaymaster(
   endpoint: string,
   apiKey: string,
   maximumFeeAmount: bigint,
+  probeAccountAddress: string,
   fetcher: typeof fetch = fetch,
 ): Promise<Strk20PrivatePaymasterPreflightResult> {
   if (!apiKey) throw new Error("AVNU_PAYMASTER_API_KEY is required");
   if (maximumFeeAmount < 0n) {
     throw new Error("STRK20 private paymaster fee cap must not be negative");
   }
-  const gateway = new AvnuPrivatePaymasterGateway(endpoint, (input, init) => {
+  const authenticatedFetch: typeof fetch = (input, init) => {
     const headers = new Headers(init?.headers);
     headers.set("x-paymaster-api-key", apiKey);
     return fetcher(input, { ...init, headers });
-  });
-  const build = await gateway.buildPoolAction(
-    STRK20_MAINNET.poolAddress,
-    STRK20_MAINNET.usdcAddress,
-  );
+  };
+  const gateway = new AvnuPrivatePaymasterGateway(endpoint, authenticatedFetch);
+  let build;
+  try {
+    build = await gateway.buildInvokeAndPoolAction(
+      STRK20_MAINNET.poolAddress,
+      STRK20_MAINNET.usdcAddress,
+      probeAccountAddress,
+      [
+        {
+          contractAddress: STRK20_MAINNET.usdcAddress,
+          entrypoint: "approve",
+          calldata: [STRK20_MAINNET.poolAddress, "1", "0"],
+        },
+      ],
+    );
+  } catch (error) {
+    throw new Error("AVNU atomic STRK20 deposit build is unavailable", {
+      cause: error,
+    });
+  }
   const fee = build.feeAction;
   if (!fee) throw new Error("AVNU returned no private pool fee action");
   if (!sameFelt(fee.token, STRK20_MAINNET.usdcAddress)) {
@@ -222,13 +241,78 @@ export async function preflightStrk20PrivatePaymaster(
   if (fee.amount > maximumFeeAmount) {
     throw new Error("AVNU private pool fee exceeds the configured maximum");
   }
+  try {
+    await preflightSponsoredDeployment(endpoint, authenticatedFetch);
+  } catch (error) {
+    throw new Error("AVNU sponsored S1 deployment build is unavailable", {
+      cause: error,
+    });
+  }
   return {
     mode: "sponsored_private",
+    atomicDepositSupported: true,
+    sponsoredAccountDeploymentSupported: true,
     feeToken: fee.token,
     feeRecipient: fee.recipient,
     feeAmount: fee.amount.toString(),
     maximumFeeAmount: maximumFeeAmount.toString(),
   };
+}
+
+async function preflightSponsoredDeployment(
+  endpoint: string,
+  fetcher: typeof fetch,
+): Promise<void> {
+  const publicKey = "0x1";
+  const address = preflightAccountAddress();
+  const response = await fetcher(endpoint, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "paymaster_buildTransaction",
+      params: {
+        transaction: {
+          type: "deploy",
+          deployment: {
+            address,
+            class_hash: STRK20_MAINNET.ozAccountClassHash,
+            salt: publicKey,
+            calldata: [publicKey],
+            version: 1,
+          },
+        },
+        parameters: {
+          version: "0x1",
+          fee_mode: { mode: "sponsored" },
+        },
+      },
+    }),
+    cache: "no-store",
+    redirect: "error",
+    referrerPolicy: "no-referrer",
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  const body = (await response.json()) as JsonRpcResponse<{
+    readonly type?: unknown;
+  }>;
+  if (!response.ok || body.error || body.result?.type !== "deploy") {
+    throw new Error("AVNU sponsored S1 deployment is unavailable");
+  }
+}
+
+function preflightAccountAddress(): string {
+  const publicKey = "0x1";
+  return hash.calculateContractAddressFromHash(
+    publicKey,
+    STRK20_MAINNET.ozAccountClassHash,
+    [publicKey],
+    0,
+  );
 }
 
 async function poolView(

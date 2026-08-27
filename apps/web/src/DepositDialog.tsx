@@ -39,6 +39,8 @@ export function DepositDialog({
   onPrepareRoute,
   onOpenJournal,
   onSubmitDepositActions,
+  onQuotePrivateFee,
+  onShieldDeposit,
   onWithdrawToTransport,
   onSubmitFundingAction,
   onReadyForLaunch,
@@ -58,6 +60,23 @@ export function DepositDialog({
   onSubmitDepositActions(
     actions: readonly LayerswapDepositAction[],
   ): Promise<readonly string[]>;
+  onQuotePrivateFee?(): Promise<bigint>;
+  onShieldDeposit?(
+    route: ResolvedPonsPrivacyRoute,
+    request: {
+      readonly amount: bigint;
+      readonly fundingTransactionHash: string;
+      readonly previousDeploymentTransactionHash?: string;
+      readonly previousPrivateTransactionHash?: string;
+      readonly onDeploymentTransactionHash?: (
+        hash: string,
+      ) => void | Promise<void>;
+      readonly onPrivateRelayStart?: () => void | Promise<void>;
+      readonly onPrivateTransactionHash?: (
+        hash: string,
+      ) => void | Promise<void>;
+    },
+  ): Promise<string>;
   onWithdrawToTransport?(
     route: ResolvedPonsPrivacyRoute,
     amount: bigint,
@@ -72,6 +91,7 @@ export function DepositDialog({
   const [mode, setMode] = useState<FlowMode>("deposit");
   const [amount, setAmount] = useState("10");
   const [quote, setQuote] = useState<LayerswapQuote>();
+  const [privateFee, setPrivateFee] = useState<bigint>();
   const [operation, setOperation] = useState<PrivacyOperation>();
   const [route, setRoute] = useState<ResolvedPonsPrivacyRoute>();
   const [operations, setOperations] = useState<readonly PrivacyOperation[]>([]);
@@ -87,6 +107,7 @@ export function DepositDialog({
     if (busy) return;
     setMode(next);
     setQuote(undefined);
+    setPrivateFee(undefined);
     setOperation(undefined);
     setRoute(undefined);
     setError(undefined);
@@ -101,14 +122,15 @@ export function DepositDialog({
     setRoute(undefined);
     try {
       const amountIn = parseUsdAmount(amount);
-      const result =
+      const [result, nextPrivateFee] =
         mode === "deposit"
-          ? await api.quote(amountIn)
-          : await requireMethod(
-              api.quoteFunding,
-              "Private exit quoting",
-            )(amountIn);
+          ? [await api.quote(amountIn), undefined]
+          : await Promise.all([
+              requireMethod(api.quoteFunding, "Private exit quoting")(amountIn),
+              requireMethod(onQuotePrivateFee, "Private fee quoting")(),
+            ]);
       setQuote(result);
+      setPrivateFee(nextPrivateFee);
     } catch (cause) {
       setError(message(cause));
     } finally {
@@ -192,16 +214,20 @@ export function DepositDialog({
       setRoute(nextRoute);
       if (candidate.state === "draft" || candidate.state === "quote-ready") {
         const amountIn = BigInt(candidate.amount);
-        setQuote(
-          candidate.direction === "deposit"
-            ? await api.quote(amountIn)
-            : await requireMethod(
-                api.quoteFunding,
-                "Private exit quoting",
-              )(amountIn),
-        );
+        if (candidate.direction === "deposit") {
+          setQuote(await api.quote(amountIn));
+          setPrivateFee(undefined);
+        } else {
+          const [nextQuote, nextPrivateFee] = await Promise.all([
+            requireMethod(api.quoteFunding, "Private exit quoting")(amountIn),
+            requireMethod(onQuotePrivateFee, "Private fee quoting")(),
+          ]);
+          setQuote(nextQuote);
+          setPrivateFee(nextPrivateFee);
+        }
       } else {
         setQuote(undefined);
+        setPrivateFee(undefined);
       }
       setActivityOpen(false);
     } catch (cause) {
@@ -297,6 +323,63 @@ export function DepositDialog({
     }
   }
 
+  async function shieldOperation(
+    candidate: PrivacyOperation,
+  ): Promise<PrivacyOperation> {
+    if (!route || !journalRef.current) {
+      throw new Error("The saved S1 route is not unlocked");
+    }
+    const shield = requireMethod(onShieldDeposit, "STRK20 deposit shielding");
+    if (!candidate.destinationTxHash || !candidate.destinationAmount) {
+      throw new Error(
+        "The completed LayerSwap output must be reconciled before shielding",
+      );
+    }
+    if (candidate.privateRelayStartedAt && !candidate.privateTxHash) {
+      throw new Error(
+        "The prior STRK20 relay has no transaction hash; reconcile it before resubmitting",
+      );
+    }
+    const journal = journalRef.current;
+    let current =
+      candidate.state === "bridged-to-starknet"
+        ? await journal.advance(candidate.id, "shielding")
+        : candidate;
+    setOperation(current);
+    const patchShielding = async (
+      patch: Parameters<PonsOperationJournal["advance"]>[2],
+    ) => {
+      current = await journal.advance(candidate.id, "shielding", patch);
+      setOperation(current);
+    };
+    const privateTxHash = await shield(route, {
+      amount: BigInt(candidate.destinationAmount),
+      fundingTransactionHash: candidate.destinationTxHash,
+      ...(candidate.accountDeploymentTxHash
+        ? {
+            previousDeploymentTransactionHash:
+              candidate.accountDeploymentTxHash,
+          }
+        : {}),
+      ...(candidate.privateTxHash
+        ? { previousPrivateTransactionHash: candidate.privateTxHash }
+        : {}),
+      onDeploymentTransactionHash: (hash) =>
+        patchShielding({ accountDeploymentTxHash: hash }).then(() => undefined),
+      onPrivateRelayStart: () =>
+        patchShielding({ privateRelayStartedAt: Date.now() }).then(
+          () => undefined,
+        ),
+      onPrivateTransactionHash: (hash) =>
+        patchShielding({ privateTxHash: hash }).then(() => undefined),
+    });
+    current = await journal.advance(candidate.id, "private", {
+      privateTxHash,
+    });
+    setOperation(current);
+    return current;
+  }
+
   async function continueOperation() {
     if (!route || !operation || !journalRef.current || !account) return;
     const journal = journalRef.current;
@@ -309,6 +392,12 @@ export function DepositDialog({
       }
       let current = operation;
       if (
+        operation.direction === "deposit" &&
+        (operation.state === "bridged-to-starknet" ||
+          operation.state === "shielding")
+      ) {
+        current = await shieldOperation(operation);
+      } else if (
         operation.direction === "deposit" &&
         operation.state === "swap-created"
       ) {
@@ -381,7 +470,7 @@ export function DepositDialog({
   }
 
   async function refreshStatus() {
-    if (!operation?.swapId || !journalRef.current || !account) return;
+    if (!operation?.swapId || !journalRef.current || !account || !route) return;
     setBusy("status");
     setError(undefined);
     try {
@@ -401,15 +490,21 @@ export function DepositDialog({
           operation.direction === "deposit" &&
           operation.state === "source-submitted"
         ) {
+          if (!status.outputTransactionHash || !status.outputAmount) {
+            throw new Error(
+              "LayerSwap completed without a verifiable Starknet output transaction",
+            );
+          }
           current = await journalRef.current.advance(
             operation.id,
             "bridged-to-starknet",
             {
-              ...(status.outputTransactionHash
-                ? { destinationTxHash: status.outputTransactionHash }
-                : {}),
+              destinationTxHash: status.outputTransactionHash,
+              destinationAmount: status.outputAmount.toString(),
             },
           );
+          setOperation(current);
+          current = await shieldOperation(current);
         } else if (
           operation.direction === "exit" &&
           operation.state === "bridge-transfer-submitted"
@@ -445,7 +540,15 @@ export function DepositDialog({
       setOperation(current);
       setOperations(await journalRef.current.list());
     } catch (cause) {
-      setError(message(cause));
+      const errorMessage = message(cause);
+      try {
+        setOperation(
+          await journalRef.current.recordError(operation.id, errorMessage),
+        );
+      } catch {
+        // Keep the execution error visible even if journal recovery also fails.
+      }
+      setError(errorMessage);
     } finally {
       setBusy(undefined);
     }
@@ -458,17 +561,20 @@ export function DepositDialog({
     ),
   );
   const continuationAvailable = Boolean(
-    operation?.swapId &&
+    operation &&
     [
       "swap-created",
+      "bridged-to-starknet",
+      "shielding",
       "private-withdrawal-submitted",
       "transport-funded",
     ].includes(operation.state),
   );
   const canStartExecution =
     mainnetExecutionEnabled &&
-    mode === "exit" &&
-    Boolean(onWithdrawToTransport && onSubmitFundingAction);
+    (mode === "deposit"
+      ? Boolean(onShieldDeposit)
+      : Boolean(onWithdrawToTransport && onSubmitFundingAction));
 
   return (
     <div
@@ -612,6 +718,7 @@ export function DepositDialog({
                 onChange={(event) => {
                   setAmount(event.target.value);
                   setQuote(undefined);
+                  setPrivateFee(undefined);
                   setOperation(undefined);
                   setRoute(undefined);
                   setError(undefined);
@@ -689,7 +796,9 @@ export function DepositDialog({
               </div>
             ) : null}
 
-            {quote ? <QuoteCard quote={quote} mode={mode} /> : null}
+            {quote ? (
+              <QuoteCard quote={quote} mode={mode} privateFee={privateFee} />
+            ) : null}
             {operation ? <OperationTimeline operation={operation} /> : null}
 
             {!account ? (
@@ -743,7 +852,9 @@ export function DepositDialog({
                 >
                   {busy === "execute"
                     ? "Executing protected route…"
-                    : "Move private funds to launcher"}
+                    : mode === "deposit"
+                      ? "Deposit and make private"
+                      : "Move private funds to launcher"}
                   {!busy ? <ArrowRight size={17} weight="bold" /> : null}
                 </button>
               ) : (
@@ -790,11 +901,15 @@ export function DepositDialog({
                   : "Refresh bridge status"}
                 {!busy ? <ClockCounterClockwise size={17} /> : null}
               </button>
-            ) : operation?.state === "bridged-to-starknet" ? (
-              <Gate title="STRK20 shield is the next atomic leg">
-                The S1 balance has arrived. The deposit runner stays locked
-                until its AVNU invoke-and-apply-action allowlist is frozen.
-              </Gate>
+            ) : operation?.state === "private" ? (
+              <div className="privacy-ready">
+                <CheckCircle size={20} weight="fill" />
+                <p>
+                  <strong>Private USDC confirmed</strong>The note becomes
+                  spendable after 10 Starknet blocks. Then choose Fund launcher
+                  and leave room for the private withdrawal fee.
+                </p>
+              </div>
             ) : operation?.state === "ready-on-robinhood" ? (
               <div className="privacy-ready">
                 <CheckCircle size={20} weight="fill" />
@@ -817,7 +932,15 @@ export function DepositDialog({
   );
 }
 
-function QuoteCard({ quote, mode }: { quote: LayerswapQuote; mode: FlowMode }) {
+function QuoteCard({
+  quote,
+  mode,
+  privateFee,
+}: {
+  quote: LayerswapQuote;
+  mode: FlowMode;
+  privateFee: bigint | undefined;
+}) {
   return (
     <div className="deposit-quote" aria-label="LayerSwap quote">
       <div>
@@ -842,6 +965,12 @@ function QuoteCard({ quote, mode }: { quote: LayerswapQuote; mode: FlowMode }) {
         <span>Route fees</span>
         <strong>{formatUsdAmount(quote.feeAmount)}</strong>
       </div>
+      {mode === "exit" && privateFee !== undefined ? (
+        <div>
+          <span>Private execution fee</span>
+          <strong>{formatUsdAmount(privateFee)} USDC</strong>
+        </div>
+      ) : null}
       <p>Live LayerSwap quote · refreshed before a swap is created</p>
     </div>
   );
@@ -855,6 +984,7 @@ function OperationTimeline({ operation }: { operation: PrivacyOperation }) {
           "swap-created",
           "source-submitted",
           "bridged-to-starknet",
+          "shielding",
           "private",
         ]
       : [

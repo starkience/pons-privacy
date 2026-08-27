@@ -24,6 +24,7 @@ function note(amount: bigint, created?: number): Note {
 
 function harness(warnings: Array<{ code: WarningCode; message: string }> = []) {
   const tokenBuilder = {
+    deposit: vi.fn().mockReturnThis(),
     inputs: vi.fn().mockReturnThis(),
     withdraw: vi.fn().mockReturnThis(),
   };
@@ -60,12 +61,17 @@ function harness(warnings: Array<{ code: WarningCode; message: string }> = []) {
   };
   const provider = {
     getBlockNumber: vi.fn().mockResolvedValue(100),
+    callContract: vi.fn(),
     waitForTransaction: vi.fn().mockResolvedValue({
       isSuccess: () => true,
       block_number: 101,
     }),
   };
-  const account = { address: "0x123", execute: vi.fn() };
+  const account = {
+    address: "0x123",
+    execute: vi.fn(),
+    signMessage: vi.fn(),
+  };
   const paymaster: PrivatePaymasterGateway = {
     buildPoolAction: vi.fn().mockResolvedValue({
       parameters: {
@@ -82,10 +88,12 @@ function harness(warnings: Array<{ code: WarningCode; message: string }> = []) {
         amount: 3n,
       },
     }),
+    buildInvokeAndPoolAction: vi.fn(),
     executePoolAction: vi.fn().mockResolvedValue({
       transactionHash: "0xfeed",
       trackingId: "track-1",
     }),
+    executeInvokeAndPoolAction: vi.fn(),
   };
   const session = new UserStrk20Session(
     provider as unknown as RpcProvider,
@@ -94,6 +102,7 @@ function harness(warnings: Array<{ code: WarningCode; message: string }> = []) {
     paymaster,
     POOL,
     USDC,
+    123n,
     10n,
   );
   return {
@@ -201,5 +210,137 @@ describe("user-controlled STRK20 outbound", () => {
     ).rejects.toThrow("exceeds the configured maximum");
     expect(transfers.discoverNotes).not.toHaveBeenCalled();
     expect(paymaster.executePoolAction).not.toHaveBeenCalled();
+  });
+});
+
+describe("user-controlled STRK20 inbound", () => {
+  it("atomically approves, registers, screens, and deposits the actual LayerSwap output", async () => {
+    const { account, invocation, paymaster, session, tokenBuilder, transfers } =
+      harness();
+    const provider = (
+      session as unknown as {
+        provider: {
+          getBlockNumber: ReturnType<typeof vi.fn>;
+          callContract: ReturnType<typeof vi.fn>;
+        };
+      }
+    ).provider;
+    provider.getBlockNumber.mockResolvedValue(120);
+    provider.callContract
+      .mockResolvedValueOnce(["100", "0"])
+      .mockResolvedValueOnce(["0"]);
+    vi.mocked(paymaster.buildInvokeAndPoolAction).mockResolvedValueOnce({
+      type: "invoke_and_apply_action",
+      parameters: {
+        version: "0x1",
+        fee_mode: {
+          mode: "sponsored_private",
+          pool_fee_token: USDC,
+        },
+      },
+      feeAction: {
+        type: "withdraw",
+        recipient: "0x777",
+        token: USDC,
+        amount: 3n,
+      },
+    });
+    vi.mocked(paymaster.executeInvokeAndPoolAction).mockImplementationOnce(
+      async (args) => {
+        await args.onRelayStart?.();
+        return {
+          transactionHash: "0xdeposit",
+          trackingId: "track-deposit",
+        };
+      },
+    );
+    const onRelayStart = vi.fn();
+    const onTransactionHash = vi.fn();
+
+    await expect(
+      session.depositFromPublicBalance({
+        amount: 100n,
+        fundingTransactionHash: "0xfunding",
+        deploymentBlockNumber: 102,
+        onRelayStart,
+        onTransactionHash,
+      }),
+    ).resolves.toMatchObject({
+      transactionHash: "0xdeposit",
+      amount: 100n,
+      privateAmount: 97n,
+      poolFee: 3n,
+      provingBlockNumber: 110,
+      recovered: false,
+    });
+    expect(paymaster.buildInvokeAndPoolAction).toHaveBeenCalledWith(
+      POOL,
+      USDC,
+      "0x123",
+      [
+        {
+          contractAddress: USDC,
+          entrypoint: "approve",
+          calldata: [POOL, "100", "0"],
+        },
+      ],
+    );
+    expect(transfers.build).toHaveBeenCalledWith(
+      expect.objectContaining({
+        autoRegister: true,
+        autoSetup: true,
+        provingBlockId: 110,
+      }),
+    );
+    expect(tokenBuilder.deposit).toHaveBeenCalledWith({ amount: 100n });
+    expect(tokenBuilder.withdraw).toHaveBeenCalledWith({
+      recipient: "0x777",
+      amount: 3n,
+    });
+    expect(transfers.executeWithInvocation).toHaveBeenCalledWith(
+      invocation,
+      110,
+    );
+    expect(onRelayStart).toHaveBeenCalledOnce();
+    expect(onTransactionHash).toHaveBeenCalledWith("0xdeposit");
+    expect(account.execute).not.toHaveBeenCalled();
+  });
+
+  it("reconciles a journaled successful deposit instead of submitting again", async () => {
+    const { paymaster, session, transfers } = harness();
+    await expect(
+      session.depositFromPublicBalance({
+        amount: 100n,
+        fundingTransactionHash: "0xfunding",
+        previousTransactionHash: "0xdeposit",
+      }),
+    ).resolves.toMatchObject({
+      transactionHash: "0xdeposit",
+      recovered: true,
+    });
+    expect(paymaster.buildInvokeAndPoolAction).not.toHaveBeenCalled();
+    expect(transfers.executeWithInvocation).not.toHaveBeenCalled();
+  });
+
+  it("refuses to overwrite an immutable registration with another viewing key", async () => {
+    const { paymaster, session } = harness();
+    const provider = (
+      session as unknown as {
+        provider: {
+          getBlockNumber: ReturnType<typeof vi.fn>;
+          callContract: ReturnType<typeof vi.fn>;
+        };
+      }
+    ).provider;
+    provider.callContract
+      .mockResolvedValueOnce(["100", "0"])
+      .mockResolvedValueOnce(["0x1"]);
+    await expect(
+      session.depositFromPublicBalance({
+        amount: 100n,
+        fundingTransactionHash: "0xfunding",
+      }),
+    ).rejects.toThrow("different immutable viewing key");
+    expect(paymaster.buildInvokeAndPoolAction).not.toHaveBeenCalled();
   });
 });

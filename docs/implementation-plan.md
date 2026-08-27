@@ -8,6 +8,8 @@
 - live LayerSwap quotes and strictly pinned bidirectional swap schemas;
 - STRK20 mature-note selection and hosted proving client;
 - private-paymaster proof submission with a hard S1 outbound prohibition;
+- sponsored S1 deployment plus screened, atomic approve/register/deposit using LayerSwap's actual
+  output amount and encrypted duplicate-submission recovery;
 - S2 atomic deploy-and-transfer through standard SNIP-29;
 - server-only LayerSwap/AVNU credentials and independent mainnet kill switches; and
 - frontend wallet connection plus local privacy-account creation;

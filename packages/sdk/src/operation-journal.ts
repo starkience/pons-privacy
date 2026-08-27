@@ -41,6 +41,11 @@ export interface PrivacyOperation {
   readonly robinhoodExecutionAddress?: string;
   readonly swapId?: string;
   readonly sourceTxHash?: string;
+  /** Actual destination-chain amount, not the source amount requested. */
+  readonly destinationAmount?: string;
+  readonly accountDeploymentTxHash?: string;
+  /** Set before the private relay request leaves the browser. */
+  readonly privateRelayStartedAt?: number;
   readonly privateTxHash?: string;
   readonly transportTxHash?: string;
   readonly destinationTxHash?: string;
@@ -65,6 +70,9 @@ export type PrivacyOperationPatch = Partial<
     PrivacyOperation,
     | "swapId"
     | "sourceTxHash"
+    | "destinationAmount"
+    | "accountDeploymentTxHash"
+    | "privateRelayStartedAt"
     | "privateTxHash"
     | "transportTxHash"
     | "destinationTxHash"
@@ -412,6 +420,7 @@ function validatePatch(patch: PrivacyOperationPatch): void {
   for (const field of [
     "swapId",
     "sourceTxHash",
+    "accountDeploymentTxHash",
     "privateTxHash",
     "transportTxHash",
     "destinationTxHash",
@@ -420,6 +429,16 @@ function validatePatch(patch: PrivacyOperationPatch): void {
     if (value !== undefined && (!value.trim() || value.length > 256)) {
       throw new Error(`${field} must be a non-empty bounded string`);
     }
+  }
+  if (
+    patch.destinationAmount !== undefined &&
+    (!BASE_UNITS_PATTERN.test(patch.destinationAmount) ||
+      patch.destinationAmount === "0")
+  ) {
+    throw new Error("destinationAmount must be positive base units");
+  }
+  if (patch.privateRelayStartedAt !== undefined) {
+    validateTimestamp(patch.privateRelayStartedAt, "privateRelayStartedAt");
   }
   if (patch.quoteExpiresAt !== undefined)
     validateTimestamp(patch.quoteExpiresAt, "quoteExpiresAt");
@@ -448,6 +467,19 @@ function validateDocument(value: JournalDocument): void {
       throw new Error();
     }
     normalizeStarknetAddress(operation.rootStarknetAddress);
+    if (
+      operation.destinationAmount !== undefined &&
+      (!BASE_UNITS_PATTERN.test(operation.destinationAmount) ||
+        operation.destinationAmount === "0")
+    ) {
+      throw new Error();
+    }
+    if (operation.privateRelayStartedAt !== undefined) {
+      validateTimestamp(
+        operation.privateRelayStartedAt,
+        "privateRelayStartedAt",
+      );
+    }
     if (operation.direction === "exit") {
       if (
         !operation.transportStarknetAddress ||

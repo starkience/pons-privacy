@@ -104,10 +104,32 @@ describe("STRK20 mainnet preflight", () => {
       expect(new Headers(init?.headers).get("x-paymaster-api-key")).toBe(
         "server-secret",
       );
+      const request = JSON.parse(String(init?.body)) as {
+        params: { transaction: { type: string } };
+      };
+      if (request.params.transaction.type === "deploy") {
+        return Response.json({
+          jsonrpc: "2.0",
+          id: 2,
+          result: { type: "deploy" },
+        });
+      }
       return Response.json({
         jsonrpc: "2.0",
         id: 1,
         result: {
+          typed_data: {
+            types: {},
+            message: {
+              calls: [
+                {
+                  to: STRK20_MAINNET.usdcAddress,
+                  selector: hash.getSelectorFromName("approve"),
+                  calldata: [STRK20_MAINNET.poolAddress, "1", "0"],
+                },
+              ],
+            },
+          },
           fee_action: {
             type: "withdraw",
             recipient: "0x123",
@@ -122,10 +144,13 @@ describe("STRK20 mainnet preflight", () => {
         "https://paymaster.example",
         "server-secret",
         500_000n,
+        "0x123",
         fetcher,
       ),
     ).resolves.toMatchObject({
       mode: "sponsored_private",
+      atomicDepositSupported: true,
+      sponsoredAccountDeploymentSupported: true,
       feeAmount: "187732",
       maximumFeeAmount: "500000",
     });

@@ -95,6 +95,39 @@ describe("deposit quote API", () => {
       api.getFundingAction!("swap-1", "0x456", 10_000_000n),
     ).resolves.toMatchObject({ recipient: "0x987", amount: 10_000_000n });
   });
+
+  it("uses LayerSwap's actual output transaction amount for shielding", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            id: "swap-1",
+            status: "completed",
+            amountIn: "10000000",
+            sourceAddress: "0x1111111111111111111111111111111111111111",
+            destinationAddress: "0x456",
+            transactions: [
+              {
+                type: "output",
+                status: "completed",
+                transactionHash: "0xfunding",
+                amount: "9630000",
+              },
+            ],
+          }),
+        ),
+    );
+    const api = createDepositQuoteApi("/deposit-api/v1", fetchMock);
+    await expect(
+      api.getDepositSwap!(
+        "swap-1",
+        "0x1111111111111111111111111111111111111111",
+      ),
+    ).resolves.toMatchObject({
+      outputTransactionHash: "0xfunding",
+      outputAmount: 9_630_000n,
+    });
+  });
 });
 
 describe("USD amount helpers", () => {

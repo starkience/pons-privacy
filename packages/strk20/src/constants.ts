@@ -14,6 +14,8 @@ export const STRK20_MAINNET = {
   poolUpgradeBlock: 11_632_886,
   poolUpgradeTransaction:
     "0x04be26fa7600175c400d0a552ef5b21d46f1e103790e1580ce7de1563342ad36",
+  ozAccountClassHash:
+    "0x01d1777db36cdd06dd62cfde77b1b6ae06412af95d57a13dc40ac77b8a702381",
   governanceAdmin:
     "0x3103066e6c7037ba947ea9a7b5b8d110ae7f3dA631fa5849435d0dc1fc5ef785",
   suppliedCompliancePublicKey:
