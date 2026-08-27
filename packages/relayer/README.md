@@ -15,7 +15,9 @@ server-side and exposes:
 - inbound quotes and S1-targeted swap creation under `LAYERSWAP_SWAP_CREATION_ENABLED`;
 - outbound S2→fresh Robinhood R2 swap creation under
   `LAYERSWAP_OUTBOUND_SWAP_CREATION_ENABLED`; and
-- the four allowlisted AVNU JSON-RPC methods at `POST /v1/paymaster` when configured.
+- the four allowlisted AVNU JSON-RPC methods at `POST /v1/paymaster` when configured; and
+- allowlisted read-only Starknet JSON-RPC at `POST /v1/starknet`. Transaction-submission methods are
+  rejected and the upstream provider credential stays server-side.
 
 Both mainnet swap gates default to false. Outbound LayerSwap actions are accepted only when they
 contain one exact Starknet-mainnet USDC transfer for the requested amount. Request/response bodies

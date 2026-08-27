@@ -17,7 +17,7 @@
     "format": "prettier --write '**/*.{ts,tsx,css,json,md,yml}' && forge fmt --root evm",
     "format:check": "prettier --check '**/*.{ts,tsx,css,json,md,yml}' && forge fmt --root evm --check",
     "setup:evm": "cd evm && forge soldeer install --config-location foundry",
-    "preflight:strk20": "pnpm --filter @pons-privacy/strk20 preflight",
+    "preflight:strk20": "pnpm --filter @pons-privacy/strk20 build && node --env-file-if-exists=.env packages/strk20/dist/preflight-cli.js",
     "test": "pnpm --filter @pons-privacy/sdk test && pnpm --filter @pons-privacy/strk20 test && pnpm --filter @pons-privacy/relayer test && pnpm --filter @pons-privacy/web test && pnpm test:evm",
     "test:evm": "pnpm setup:evm && forge test --root evm",
     "test:fork": "forge test --root evm --fork-url https://rpc.mainnet.chain.robinhood.com --match-contract PonsV2ForkTest -vv",

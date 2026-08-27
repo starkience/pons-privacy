@@ -49,13 +49,13 @@ is required, and the project does not receive the signature or derived private/v
 deployed Robinhood factory resolves each owner's counterfactual `PonsPrivacyAccount` (R2);
 LayerSwap funds R2 directly, never O2.
 
-Mainnet STRK20 execution is currently fail-closed. On 2026-08-27 the configured pool address
-reported class hash `0x67dddd89d80fedadc06b6f160798f94800a4a70164e5a24301cd0d6076b554d`,
-not the supplied V1/RC pin
-`0x030b8c540cf04d8ef0f4db2a9098d9cc0e35e83af1cb3325f5a4f40144b4b30b`. StarkWare's public
-repository identifies the supplied hash as its 2026-04-20 V1 mainnet deployment, while its
-2026-07-08 V2 tag documents a different class again. Do not enable funded execution until
-StarkWare confirms the live pool, SDK, prover, and discovery compatibility set.
+The former STRK20 class-mismatch blocker is resolved. The configured proxy was upgraded at block
+`11632886` by transaction `0x4be26fa7600175c400d0a552ef5b21d46f1e103790e1580ce7de1563342ad36`
+from the supplied V1 class to its current screening-capable V2 implementation. The strict mainnet
+preflight now checks the live class, pool-reported version `2.0`, screener key, 450-block proof
+window, pinned OHTTP keys, real encrypted prover/discovery calls, and AVNU `sponsored_private`
+support. Mainnet execution remains fail-closed only until a minimum-value funded round trip and
+independent review pass; compatibility is no longer the blocker.
 
 The outbound invariant is enforced in code: S1 cannot be the public bridge source. The hosted
 prover builds a private withdrawal to S2, AVNU's private paymaster submits the proof, and S2 then
@@ -79,7 +79,8 @@ disabled by separate kill switches. No token has been launched from this reposit
 
 LayerSwap is the selected transport. The backend adapter pins both USDG/USDC directions, protects
 the partner credential, and strictly parses limits, quotes, swap creation, status, transactions,
-and deposit actions. Mainnet creation and transfer signing remain locked until bidirectional
+and deposit actions. A read-only same-origin Starknet proxy also keeps the Alchemy credential out
+of the browser bundle. Mainnet creation and transfer signing remain locked until bidirectional
 small-value tests prove contract senders, arbitrary recipients, fees, expiry, refunds,
 interruption recovery, and exact delivery.
 

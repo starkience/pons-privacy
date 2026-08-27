@@ -23,6 +23,10 @@ import {
   MemorySwapOperationStore,
   type SwapOperationStore,
 } from "./swap-operation-store.js";
+import {
+  forwardStarknetRpcRequest,
+  type StarknetRpcProxyOptions,
+} from "./starknet-rpc-proxy.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const BASE_UNIT_PATTERN = /^[1-9][0-9]*$/;
@@ -46,6 +50,7 @@ export interface DepositServerOptions {
   readonly swapCreationEnabled: boolean;
   readonly fundingSwapCreationEnabled: boolean;
   readonly paymaster?: AvnuPaymasterProxyOptions;
+  readonly starknetRpc?: StarknetRpcProxyOptions;
   readonly operationStore?: SwapOperationStore;
 }
 
@@ -69,8 +74,19 @@ export function startDepositServer(
           fundingSwapCreationEnabled: options.fundingSwapCreationEnabled,
           perUserStarknetAccounts: true,
           paymasterProxyEnabled: Boolean(options.paymaster),
+          starknetRpcProxyEnabled: Boolean(options.starknetRpc),
           actionSigningEnabled: false,
         });
+      }
+      if (request.method === "POST" && url.pathname === "/v1/starknet") {
+        if (!options.starknetRpc) {
+          throw new HttpError(503, "Starknet RPC proxy is not configured");
+        }
+        const proxied = await forwardStarknetRpcRequest(
+          await readJson(request),
+          options.starknetRpc,
+        );
+        return json(response, proxied.status, proxied.body);
       }
       if (request.method === "POST" && url.pathname === "/v1/paymaster") {
         if (!options.paymaster) {

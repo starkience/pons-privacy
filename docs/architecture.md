@@ -23,7 +23,7 @@ computation; AVNU submits the proved action and pays Starknet gas.
 
 | Component                   | Responsibility                                                         |
 | --------------------------- | ---------------------------------------------------------------------- |
-| STRK20 RC.4                 | private USDC notes, screening, proofs, selective disclosure            |
+| STRK20 V2 / SDK RC.4        | private USDC notes, screening, proofs, selective disclosure            |
 | Browser Privacy SDK client  | derive user keys, discover notes, build proof intents                  |
 | Hosted prover/discovery     | compute proofs and return encrypted discovery data                     |
 | AVNU private paymaster      | submit pool proof without making S1 the onchain sender                 |

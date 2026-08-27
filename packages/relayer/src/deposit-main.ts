@@ -20,6 +20,9 @@ startDepositServer(layerswap, port, {
   fundingSwapCreationEnabled:
     process.env.LAYERSWAP_OUTBOUND_SWAP_CREATION_ENABLED === "true",
   operationStore: new FileSwapOperationStore(operationStorePath),
+  ...(process.env.STARKNET_RPC_URL
+    ? { starknetRpc: { endpoint: process.env.STARKNET_RPC_URL } }
+    : {}),
   ...(paymasterApiKey
     ? {
         paymaster: {

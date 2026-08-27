@@ -1,5 +1,5 @@
 import { validateAndParseAddress } from "starknet";
-import { STRK20_MAINNET_RC4 } from "./constants.js";
+import { STRK20_MAINNET } from "./constants.js";
 
 export interface Strk20NetworkConfig {
   readonly rpcUrl: string;
@@ -15,12 +15,12 @@ export function loadStrk20NetworkConfig(
 ): Strk20NetworkConfig {
   return {
     rpcUrl: requireHttpsUrl(env.STARKNET_RPC_URL, "STARKNET_RPC_URL"),
-    poolAddress: STRK20_MAINNET_RC4.poolAddress,
-    poolClassHash: STRK20_MAINNET_RC4.poolClassHash,
-    provingServiceUrl: STRK20_MAINNET_RC4.provingServiceUrl,
-    discoveryServiceUrl: STRK20_MAINNET_RC4.discoveryServiceUrl,
+    poolAddress: STRK20_MAINNET.poolAddress,
+    poolClassHash: STRK20_MAINNET.poolClassHash,
+    provingServiceUrl: STRK20_MAINNET.provingServiceUrl,
+    discoveryServiceUrl: STRK20_MAINNET.discoveryServiceUrl,
     ohttpPublicKeyConfig: Uint8Array.from(
-      Buffer.from(STRK20_MAINNET_RC4.ohttpPublicKeyConfigBase64, "base64"),
+      Buffer.from(STRK20_MAINNET.ohttpPublicKeyConfigBase64, "base64"),
     ),
   };
 }

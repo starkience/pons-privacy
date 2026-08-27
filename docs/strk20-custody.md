@@ -34,18 +34,22 @@ fallback. S2 and R2 are public at the exit edge; amount/timing and provider corr
 ## Required configuration and blockers
 
 Public pool/service pins live in `deployments/strk20-mainnet.json`. The Starknet RPC provider key,
-LayerSwap key, and AVNU paymaster key stay server-side. The mainnet OpenZeppelin account class hash
-is required public configuration and must be verified as declared before any funded test.
+LayerSwap key, and AVNU paymaster key stay server-side. The browser reaches Starknet through an
+allowlisted read-only same-origin proxy; it cannot submit a normal Starknet transaction through
+that endpoint. The mainnet OpenZeppelin account class hash is required public configuration and
+must be verified as declared before any funded test.
 
 The pinned class is OpenZeppelin 3.x `AccountUpgradeable` at
 `0x01d1777db36cdd06dd62cfde77b1b6ae06412af95d57a13dc40ac77b8a702381`; its Stark-curve constructor
 and SRC9 ABI were verified against the declared Starknet mainnet class on 2026-08-27.
 
-The privacy-pool pin does not currently match the class at the configured pool address. The
-supplied class is StarkWare's tagged V1 mainnet deployment, but the address now returns
-`0x67dddd89d80fedadc06b6f160798f94800a4a70164e5a24301cd0d6076b554d`. The preflight therefore
-blocks every funded path until StarkWare confirms the full live compatibility set; changing only
-the expected class hash is not an acceptable workaround.
+The privacy-pool mismatch was traced through mainnet history rather than bypassed. At block
+`11632886`, the pool proxy registered and replaced its V1 implementation with current class
+`0x67dddd89d80fedadc06b6f160798f94800a4a70164e5a24301cd0d6076b554d`. It reports version `2.0`,
+the screening ABI and pinned screener key. The preflight verifies those views, the proof-validity
+window, actual encrypted prover/discovery requests, and AVNU `sponsored_private` support beneath
+the configured 0.50 USDC fee ceiling. Compatibility now passes; the minimum-value funded round
+trip and independent review still block every production switch.
 
 Before real value: perform a minimum-size round trip, test expiry/refunds/restarts, add rate limits,
 independently audit derivation, encrypted-journal and paymaster code, and review all logs for

@@ -8,7 +8,7 @@
 | `PonsPrivacyAccountFactory` | Robinhood mainnet               | deployed                                  |
 | Pons policy relayer         | offchain                        | not deployed                              |
 | Web/application backend     | offchain                        | local prototype                           |
-| STRK20 privacy pool         | Starknet mainnet                | external; live class mismatch blocks use  |
+| STRK20 privacy pool         | Starknet mainnet                | V2 compatibility preflight verified       |
 | Hosted prover/discovery     | Starknet mainnet                | existing external services                |
 | User S1/S2 accounts         | Starknet mainnet                | counterfactual; deploy per user/operation |
 | Cairo transport helper      | Starknet                        | not required or deployed                  |
@@ -51,27 +51,35 @@ derivation.
 Run the pinned STRK20 preflight before a funded test:
 
 ```sh
-pnpm build
-STARKNET_RPC_URL='https://...redacted...' pnpm preflight:strk20
+pnpm preflight:strk20
 ```
 
-It verifies SN_MAIN, RPC head/spec, pool class, prover/discovery health, lag, and OHTTP pins.
+It verifies SN_MAIN, the live V2 pool invariants, real pinned-OHTTP prover/discovery traffic, and
+AVNU private-paymaster support under the configured USDC fee ceiling.
 
-### Current STRK20 activation blocker
+### STRK20 compatibility resolution
 
-The preflight intentionally fails as of 2026-08-27:
+The configured pool is an upgradeable proxy. Starknet mainnet history shows the complete transition:
 
 - configured pool: `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a`;
-- supplied/pinned class: `0x030b8c540cf04d8ef0f4db2a9098d9cc0e35e83af1cb3325f5a4f40144b4b30b`;
-- live class returned independently by Starknet mainnet:
-  `0x67dddd89d80fedadc06b6f160798f94800a4a70164e5a24301cd0d6076b554d`.
+- V1 class through block `11632885`:
+  `0x030b8c540cf04d8ef0f4db2a9098d9cc0e35e83af1cb3325f5a4f40144b4b30b`;
+- upgrade block `11632886`, transaction
+  `0x4be26fa7600175c400d0a552ef5b21d46f1e103790e1580ce7de1563342ad36`;
+- current V2 class:
+  `0x67dddd89d80fedadc06b6f160798f94800a4a70164e5a24301cd0d6076b554d`; and
+- pool views: version `2.0`, proof validity `450`, and the pinned live screener key.
 
-StarkWare's official `CONTRACT_V1_DEPLOYED_MAINNET_2026-04-20` tag identifies the supplied hash as
-the V1 privacy pool. Its `CONTRACT_V2_DEPLOYED_MAINNET_2026-07-08` tag publishes yet another pool
-class hash, `0x052107fadffab71bdcbb6b2ccb68ba3e1b5558d94036538053e159d3076ad633`.
-The live value must not be copied into the manifest without an authoritative compatibility set for
-the SDK, prover, discovery service, OHTTP key, and deployed pool. All funded STRK20 execution gates
-remain false until that set is confirmed and the preflight passes unchanged.
+The transaction registers, adds, and replaces the implementation. The new ABI and pool-reported
+version match StarkWare's screening-capable V2 contract surface. SDK RC.4 is after the screening-only
+RC.3 change and uses the builder API exercised here. The live preflight additionally proves both
+OHTTP pins by making encrypted requests: prover spec `0.10.3-rc.2` and discovery lag below 120
+seconds. AVNU accepts the same pool and USDC token in `sponsored_private` mode; on 2026-08-27 its
+dynamic fee action was below the configured `500000` base-unit (0.50 USDC) ceiling.
+
+This resolves the compatibility and AVNU-support blockers. Funded switches remain false because a
+minimum-value shield, private withdrawal, LayerSwap delivery/refund, and re-shield must still be
+reconciled before real launches.
 
 ## Local services
 
@@ -81,7 +89,9 @@ pnpm dev:app-api
 pnpm dev:web
 ```
 
-The LayerSwap and launch application servers bind to loopback by default. The browser operation
+The LayerSwap and launch application servers bind to loopback by default. The deposit backend also
+proxies only allowlisted read-only Starknet JSON-RPC methods and rejects transaction-submission
+methods, keeping the provider credential server-side. The browser operation
 journal is encrypted under the deterministic wallet signature, while backend LayerSwap and launch
 idempotency records are stored atomically under `.data/` by default. Those file stores are
 single-instance only. Production must use TLS, authenticated user sessions, rate/spend limits,

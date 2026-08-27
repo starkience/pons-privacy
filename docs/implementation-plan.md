@@ -16,8 +16,9 @@
 
 ## Phase 2 — funded transport proof
 
-Verify the mainnet OZ account class hash and AVNU pool support. Execute minimum-size inbound and
-outbound orders. Record exact calls, source/destination transactions, fees, expiry, refunds,
+The mainnet OZ account class, STRK20 V2 compatibility set, encrypted service transport, and AVNU
+private-pool support are verified. Execute minimum-size inbound and outbound orders. Record exact
+calls, source/destination transactions, fees, expiry, refunds,
 under/overpayment, duplicates, arbitrary recipients, and restart recovery. Keep both swap gates
 false until reconciled evidence passes review.
 

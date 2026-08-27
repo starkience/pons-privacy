@@ -10,7 +10,7 @@ import {
 } from "@starkware-libs/starknet-privacy-sdk";
 import { Account, RpcProvider, constants } from "starknet";
 import { requireStarknetAddress, type Strk20NetworkConfig } from "./config.js";
-import { STRK20_MAINNET_RC4 } from "./constants.js";
+import { STRK20_MAINNET } from "./constants.js";
 import {
   AvnuPrivatePaymasterGateway,
   type PrivatePaymasterGateway,
@@ -105,9 +105,8 @@ export class UserStrk20Session {
     const required = request.amount + poolFee;
 
     const currentBlock = await this.provider.getBlockNumber();
-    const provingBlockNumber =
-      currentBlock - STRK20_MAINNET_RC4.provingDepthBlocks;
-    if (provingBlockNumber <= STRK20_MAINNET_RC4.noteMaturityBlocks) {
+    const provingBlockNumber = currentBlock - STRK20_MAINNET.provingDepthBlocks;
+    if (provingBlockNumber <= STRK20_MAINNET.noteMaturityBlocks) {
       throw new Error("Starknet head is too young for a mature proof base");
     }
     const { notes } = await this.transfers.discoverNotes({
@@ -241,8 +240,7 @@ export function selectMatureNotes(
 ): MatureNoteSelection {
   if (amount <= 0n) throw new Error("withdrawal amount must be positive");
   const privateBalance = notes.reduce((sum, note) => sum + note.amount, 0n);
-  const maturityCutoff =
-    provingBlockNumber - STRK20_MAINNET_RC4.noteMaturityBlocks;
+  const maturityCutoff = provingBlockNumber - STRK20_MAINNET.noteMaturityBlocks;
   const mature = notes.filter(
     (note) =>
       typeof note.created === "number" &&

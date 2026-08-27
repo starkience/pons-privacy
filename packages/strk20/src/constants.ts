@@ -1,20 +1,31 @@
-export const STRK20_MAINNET_RC4 = {
+export const STRK20_MAINNET = {
   chainId: "SN_MAIN",
   chainIdHex: "0x534e5f4d41494e",
   networkId: "mainnet",
-  protocolRelease: "PRIVACY-0.14.3-RC.4",
+  sdkRelease: "PRIVACY-0.14.3-RC.4",
   sdkVersion: "0.14.3-rc.4",
+  contractInterfaceRelease: "CONTRACT_V2_DEPLOYED_MAINNET_2026-07-08",
+  poolVersion: "2.0",
+  poolVersionFelt: "0x322e30",
   poolAddress:
     "0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a",
   poolClassHash:
-    "0x030b8c540cf04d8ef0f4db2a9098d9cc0e35e83af1cb3325f5a4f40144b4b30b",
+    "0x067dddd89d80fedadc06b6f160798f94800a4a70164e5a24301cd0d6076b554d",
+  poolUpgradeBlock: 11_632_886,
+  poolUpgradeTransaction:
+    "0x04be26fa7600175c400d0a552ef5b21d46f1e103790e1580ce7de1563342ad36",
   governanceAdmin:
     "0x3103066e6c7037ba947ea9a7b5b8d110ae7f3dA631fa5849435d0dc1fc5ef785",
-  compliancePublicKey:
+  suppliedCompliancePublicKey:
     "0x01eed60b8d483b3bede62d1cc0f32874aea30747e6943437c858359b41801bf7",
-  feeTokenAddress:
+  screenerPublicKey:
+    "0x0501cc452e5a4370e2f0879c9a863b3efc915005817487460b23a8d6ef88fdb2",
+  starknetFeeTokenAddress:
     "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+  usdcAddress:
+    "0x033068f6539f8e6e6b131e6b2b814e6c34a5224bc66947c47dab9dfee93b35fb",
   proofValidityBlocks: 450,
+  proverSpecVersion: "0.10.3-rc.2",
   provingServiceUrl: "https://transaction-prover.alpha-mainnet.sw-dev.io/",
   discoveryServiceUrl: "https://discovery-service.alpha-mainnet.sw-dev.io/",
   ohttpPublicKeyConfigBase64:

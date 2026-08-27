@@ -2,8 +2,6 @@ import type {
   DerivedPonsPrivacyRoute,
   LayerswapFundingAction,
 } from "@pons-privacy/sdk";
-const STARKNET_USDC =
-  "0x033068f6539f8e6e6b131e6b2b814e6c34a5224bc66947c47dab9dfee93b35fb";
 
 export interface PrivacyExecutionRunner {
   withdrawToTransport(
@@ -40,19 +38,19 @@ export function createPrivacyExecutionRunner(
   }
   return {
     async withdrawToTransport(route, amount) {
-      const { STRK20_MAINNET_RC4, createUserStrk20Session } =
+      const { STRK20_MAINNET, createUserStrk20Session } =
         await import("@pons-privacy/strk20/browser");
       const session = createUserStrk20Session(
         {
           rpcUrl: config.rpcUrl,
-          poolAddress: STRK20_MAINNET_RC4.poolAddress,
-          poolClassHash: STRK20_MAINNET_RC4.poolClassHash,
-          provingServiceUrl: STRK20_MAINNET_RC4.provingServiceUrl,
-          discoveryServiceUrl: STRK20_MAINNET_RC4.discoveryServiceUrl,
+          poolAddress: STRK20_MAINNET.poolAddress,
+          poolClassHash: STRK20_MAINNET.poolClassHash,
+          provingServiceUrl: STRK20_MAINNET.provingServiceUrl,
+          discoveryServiceUrl: STRK20_MAINNET.discoveryServiceUrl,
           ohttpPublicKeyConfig: decodeBase64(
-            STRK20_MAINNET_RC4.ohttpPublicKeyConfigBase64,
+            STRK20_MAINNET.ohttpPublicKeyConfigBase64,
           ),
-          usdcAddress: STARKNET_USDC,
+          usdcAddress: STRK20_MAINNET.usdcAddress,
           privatePaymasterUrl: config.paymasterUrl,
           maxPrivatePaymasterFee: config.maxPrivatePaymasterFee,
         },
