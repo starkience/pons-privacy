@@ -24,6 +24,7 @@ jobs:
           scope: "@starkware-libs"
       - uses: foundry-rs/foundry-toolchain@v1
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @pons-privacy/sdk build
       - run: pnpm test
       - run: pnpm typecheck
       - run: pnpm build
