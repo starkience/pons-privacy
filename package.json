@@ -21,7 +21,7 @@
     "test": "pnpm --filter @pons-privacy/sdk test && pnpm --filter @pons-privacy/strk20 test && pnpm --filter @pons-privacy/relayer test && pnpm --filter @pons-privacy/web test && pnpm test:evm",
     "test:evm": "pnpm setup:evm && forge test --root evm",
     "test:fork": "forge test --root evm --fork-url https://rpc.mainnet.chain.robinhood.com --match-contract PonsV2ForkTest -vv",
-    "typecheck": "pnpm --filter @pons-privacy/sdk build && pnpm --filter @pons-privacy/strk20 typecheck && pnpm --filter @pons-privacy/relayer typecheck && pnpm --filter @pons-privacy/web typecheck"
+    "typecheck": "pnpm --filter @pons-privacy/sdk build && pnpm --filter @pons-privacy/strk20 build && pnpm --filter @pons-privacy/relayer typecheck && pnpm --filter @pons-privacy/web typecheck"
   },
   "devDependencies": {
     "prettier": "^3.6.2"
