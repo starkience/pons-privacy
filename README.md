@@ -1,5 +1,12 @@
 # Pons Privacy
 
+> [!WARNING]
+> **Superseded implementation.** This repository is the earlier LayerSwap prototype and is not the
+> current PrivatePons source of truth. The current implementation lives in the
+> `crosschain-privatepump` project and uses Relay for Robinhood Chain ↔ Arbitrum routing plus Circle
+> CCTP V2 for Arbitrum ↔ Starknet. Do not use this checkout to describe, configure, or deploy the
+> current product.
+
 An STRK20 sanitization layer for Pons on Robinhood Chain. Users withdraw USDC from a private
 STRK20 balance, route it into USDG at a fresh counterfactual Robinhood account, and launch or trade
 through the existing Pons contracts. Pons remains unchanged and sees the derived execution account
